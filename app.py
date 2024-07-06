@@ -1,9 +1,14 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS  # Import the CORS extension
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Configure Chrome options
 chrome_options = Options()
@@ -15,11 +20,14 @@ chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resou
 # Initialize the Chrome driver
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-# URL of the website to scrape
-url = 'https://www.sleeplessgamers.com/event/?id=6'
+@app.route('/scrape', methods=['POST'])
+def scrape():
+    data = request.json
+    url = data.get('url')
 
-# Function to fetch and process the webpage
-def fetch_and_process():
+    if not url:
+        return jsonify({'error': 'URL is required'}), 400
+
     try:
         # Open the webpage
         driver.get(url)
@@ -37,22 +45,20 @@ def fetch_and_process():
             if src.startswith('https://player.twitch.tv'):
                 twitch_urls.append(src)
 
-        print("Twitch URLs:", twitch_urls)
-
-        # Further processing can be done here
-
+        return jsonify({'twitch_urls': twitch_urls})
     except Exception as e:
-        print(f"Error fetching page content: {e}")
+        return jsonify({'error': str(e)}), 500
 
-# Main loop to continuously scrape the website
-def main():
-    interval = 60  # Interval in seconds between each fetch
-    while True:
-        fetch_and_process()
-        time.sleep(interval)
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    shutdown_func = request.environ.get('werkzeug.server.shutdown')
+    if shutdown_func is None:
+        raise RuntimeError('Not running with the Werkzeug Server')
+    shutdown_func()
+    return 'Server shutting down...'
 
 if __name__ == "__main__":
     try:
-        main()
+        app.run(debug=True, host='0.0.0.0', port=5001)
     finally:
         driver.quit()
