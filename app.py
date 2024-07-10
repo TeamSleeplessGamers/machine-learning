@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 from dotenv import load_dotenv
 import time
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -39,8 +40,14 @@ conn = None
 
 def initialize_database():
     global conn
-    conn = psycopg2.connect(database_url)
+    try:
+        conn = psycopg2.connect(database_url)
+        print("Database connection established successfully.")
+    except Exception as e:
+        print(f"Error connecting to the database: {e}")
+        conn = None
 
+# Routes
 @app.route('/')
 def index():
     return '''
@@ -56,9 +63,9 @@ def authorize_streamlabs():
 
 @app.route('/callback')
 def callback():
+    initialize_database()
     code = request.args.get('code')
     userid = request.args.get('state')
-    println("what is user", userid)
     response = requests.post(token_url, data={
         'grant_type': 'authorization_code',
         'client_id': client_id,
@@ -70,16 +77,19 @@ def callback():
     token_data = response.json()
     session['streamlabs_token'] = token_data['access_token']
     
-    # Insert the token into the database with userid
+    # Insert the token into the database with userid and created_at timestamp
     try:
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO user_streamlabs_token (userid, token) VALUES (%s, %s)", (userid, token_data['access_token']))
+            cursor.execute("INSERT INTO user_streamlabs_tokens (user_id, streamlabs_token, created_at) VALUES (%s, %s, %s)",
+                           (userid, token_data['access_token'], current_time))
             conn.commit()
     except Exception as e:
         print(f"Error inserting token into database: {e}")
         return jsonify({'error': 'Failed to insert token into database'}), 500
 
     return 'Streamlabs authorization successful!'
+
 @app.route('/scrape', methods=['POST'])
 def scrape():
     data = request.json
@@ -117,12 +127,11 @@ def shutdown():
     shutdown_func()
     return 'Server shutting down...'
 
+# Start the application
 if __name__ == "__main__":
-    initialize_database()
     try:
-        app.run(debug=True, host='0.0.0.0', port=5001)
+        app.run(debug=True, host='0.0.0.0', port=5000)
     finally:
         driver.quit()
         if conn:
             conn.close()
-
