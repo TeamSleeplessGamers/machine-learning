@@ -19,7 +19,7 @@ app.secret_key = os.urandom(24)
 
 client_id = os.getenv('CLIENT_ID')
 client_secret = os.getenv('CLIENT_SECRET')
-redirect_uri = 'http://localhost:5001/callback'
+redirect_uri = os.getenv('STREAM_LABS_REDIRECT')
 token_url = 'https://streamlabs.com/api/v2.0/token'
 oauth_url = 'https://streamlabs.com/api/v2.0/authorize'
 database_url = os.getenv('DATABASE_URL')
@@ -58,6 +58,7 @@ def authorize_streamlabs():
 def callback():
     code = request.args.get('code')
     userid = request.args.get('state')
+    println("what is user", userid)
     response = requests.post(token_url, data={
         'grant_type': 'authorization_code',
         'client_id': client_id,
