@@ -1,14 +1,26 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, session, url_for
 from flask_cors import CORS  # Import the CORS extension
+from dotenv import load_dotenv
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+import requests
+import os
+
+load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins='*')  # Enable CORS for all origins
+app.secret_key = os.urandom(24)
+
+client_id = os.getenv('CLIENT_ID')
+client_secret = os.getenv('CLIENT_SECRET')
+redirect_uri = 'http://localhost:5001/callback'
+token_url = 'https://streamlabs.com/api/v2.0/token'
+oauth_url = 'https://streamlabs.com/api/v2.0/authorize'
 
 # Configure Chrome options
 chrome_options = Options()
@@ -19,6 +31,33 @@ chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resou
 
 # Initialize the Chrome driver
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+
+@app.route('/')
+def index():
+    return '''
+        <h1>Welcome to Stream Integration</h1>
+        <a href="/authorize_streamlabs">Authorize with Streamlabs</a>
+    '''
+
+@app.route('/authorize_streamlabs')
+def authorize_streamlabs():
+    auth_url = f'{oauth_url}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=mediashare.control'
+    return redirect(auth_url)
+
+@app.route('/callback')
+def callback():
+    code = request.args.get('code')
+    response = requests.post(token_url, data={
+        'grant_type': 'authorization_code',
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'code': code,
+        'redirect_uri': redirect_uri
+    })
+
+    token_data = response.json()
+    session['streamlabs_token'] = token_data['access_token']
+    return 'Streamlabs authorization successful!'
 
 @app.route('/scrape', methods=['POST'])
 def scrape():
