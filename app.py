@@ -142,7 +142,6 @@ class TwitchRecorder:
                     ret, frame = cap.read()
                     if not ret:
                         break
-
                     # Process each frame as needed (example: convert to grayscale)
                     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
