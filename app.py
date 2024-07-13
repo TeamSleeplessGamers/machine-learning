@@ -132,25 +132,36 @@ class TwitchRecorder:
             logging.error(e)
     def process_with_opencv(self, processed_filename):
         try:
-            cap = cv2.VideoCapture(processed_filename)
+            cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 logging.error("Error opening video file: %s", processed_filename)
                 return
 
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
+            def display_frames():
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
 
-                # Process each frame as needed (example: convert to grayscale)
-                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    # Process each frame as needed (example: convert to grayscale)
+                    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-                # Display or save processed frames as required
-                cv2.imshow("Processed Frame", gray_frame)
-                cv2.waitKey(1)  # Adjust as needed for display speed or saving
+                    # Display or save processed frames as required
+                    cv2.imshow("Processed Frame", gray_frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
+                        break
 
-            cap.release()
-            cv2.destroyAllWindows()
+                cap.release()
+                cv2.destroyAllWindows()
+
+            # Run display_frames on the main thread
+            if threading.current_thread().name == 'MainThread':
+                display_frames()
+            else:
+                logging.warning("Attempting to display frames from a non-main thread. "
+                                "Move this operation to the main thread.")
+                display_frames()  # For testing purposes, run it on the current thread
+
         except Exception as e:
             logging.error("Error processing video file: %s", e)
     def check_user(self):
@@ -196,8 +207,8 @@ class TwitchRecorder:
                 processed_filename = os.path.join(processed_path, filename)
 
                 # Start recording in a new thread
-                record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
-                record_thread.start()
+                #record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
+                #record_thread.start()
 
                 # Start processing in a new thread
                 process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
