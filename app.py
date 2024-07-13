@@ -9,6 +9,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import requests
+import pytesseract
 import os
 import cv2
 import psycopg2
@@ -148,12 +149,27 @@ class TwitchRecorder:
 
             # Draw a rectangle around a specific area of interest
             # Example coordinates (x, y, width, height) for the rectangle
-            x, y, width, height = 100, 100, 200, 150
+            x, y, width, height = 1800, 20, 50, 100
             cv2.rectangle(gray_frame, (x, y), (x + width, y + height), (0, 255, 0), 2)  # Green rectangle, thickness 2
 
             # Save the processed frame with rectangle to the output folder
             output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
             cv2.imwrite(output_filename, gray_frame)
+            roi = gray_frame[y:y+height, x:x+width]
+            # Example: Convert the ROI to binary image for OCR processing
+            _, binary_roi = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY)
+            
+            # Example: Use OCR (e.g., pytesseract) to extract text from the ROI
+            text = pytesseract.image_to_string(binary_roi)
+            print(f"Text detected in ROI: {text}")
+
+            # Example: Apply template matching within the ROI
+            template = cv2.imread('./game_templates/warzone/interest_1.png', 0)  # Load your template image
+            result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            top_left = max_loc
+            bottom_right = (top_left[0] + template.shape[1], top_left[1] + template.shape[0])
+            cv2.rectangle(frame, top_left, bottom_right, 255, 2)
 
             frame_count += 1
 
