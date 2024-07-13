@@ -2,3 +2,5 @@
 /lib
 /bin
 .env
+/recorded
+/processed
