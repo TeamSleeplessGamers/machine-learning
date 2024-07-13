@@ -147,8 +147,18 @@ class TwitchRecorder:
             if not ret:
                 break
             
-            # Perform template matching on the original BGR frame
-            result = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
+            # Ensure frame is valid
+            if frame is None:
+                continue
+            
+            # Process each frame as needed (convert to grayscale)
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Perform template matching
+            if template is None:
+                continue
+            
+            result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
             _, _, _, max_loc = cv2.minMaxLoc(result)
             
             # Extract top-left and bottom-right coordinates of the detected area
@@ -184,6 +194,7 @@ class TwitchRecorder:
 
         cap.release()
         cv2.destroyAllWindows()
+
 
     def check_user(self):
         info = None
