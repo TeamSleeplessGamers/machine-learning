@@ -179,8 +179,11 @@ class TwitchRecorder:
             # Convert ROI to grayscale
             gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             
-            # Apply thresholding to create a binary image
-            _, binary_roi = cv2.threshold(gray_roi, 127, 255, cv2.THRESH_BINARY_INV)
+            # Enhance contrast (optional)
+            enhanced_roi = cv2.equalizeHist(gray_roi)
+            
+            # Apply adaptive thresholding to create a binary image
+            binary_roi = cv2.adaptiveThreshold(enhanced_roi, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
             
             # Save the ROI image to a folder for inspection (binary image)
             roi_output_filename = os.path.join('./roi_frames', f"roi_{frame_count}.jpg")
