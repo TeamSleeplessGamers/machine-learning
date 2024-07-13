@@ -110,13 +110,15 @@ class TwitchRecorder:
              "-o", recorded_filename])
 
     def process_recorded_file(self, recorded_filename, processed_filename):
+        if os.path.exists(processed_filename):
+            os.remove(processed_filename)  # Delete existing processed file if it exists
+
         if self.disable_ffmpeg:
             logging.info("moving: %s", recorded_filename)
             shutil.move(recorded_filename, processed_filename)
         else:
             logging.info("fixing %s", recorded_filename)
             self.ffmpeg_copy_and_fix_errors(recorded_filename, processed_filename)
-
     def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
         try:
             subprocess.call(
@@ -172,17 +174,11 @@ class TwitchRecorder:
                 record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
                 record_thread.start()
 
-                # Wait for recording thread to finish before starting processing
-                record_thread.join()
-
                 # Start processing in a new thread
                 process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
                 process_thread.start()
 
-                # Wait for processing thread to finish
-                process_thread.join()
-
-                logging.info("processing is done, going back to checking...")
+                logging.info("processing and recording started, going back to checking...")
                 time.sleep(self.refresh)
 
 
