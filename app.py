@@ -10,6 +10,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import requests
 import os
+import cv2
 import psycopg2
 import subprocess
 import logging
@@ -110,8 +111,8 @@ class TwitchRecorder:
              "-o", recorded_filename])
 
     def process_recorded_file(self, recorded_filename, processed_filename):
-        if os.path.exists(processed_filename):
-            os.remove(processed_filename)  # Delete existing processed file if it exists
+        #if os.path.exists(processed_filename):
+        #    os.remove(processed_filename)  # Delete existing processed file if it exists
 
         if self.disable_ffmpeg:
             logging.info("moving: %s", recorded_filename)
@@ -119,6 +120,8 @@ class TwitchRecorder:
         else:
             logging.info("fixing %s", recorded_filename)
             self.ffmpeg_copy_and_fix_errors(recorded_filename, processed_filename)
+        # After processing, use OpenCV VideoCapture to work with the processed video file
+        self.process_with_opencv(processed_filename)
     def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
         try:
             subprocess.call(
@@ -127,7 +130,29 @@ class TwitchRecorder:
             os.remove(recorded_filename)
         except Exception as e:
             logging.error(e)
+    def process_with_opencv(self, processed_filename):
+        try:
+            cap = cv2.VideoCapture(processed_filename)
+            if not cap.isOpened():
+                logging.error("Error opening video file: %s", processed_filename)
+                return
 
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                # Process each frame as needed (example: convert to grayscale)
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+                # Display or save processed frames as required
+                cv2.imshow("Processed Frame", gray_frame)
+                cv2.waitKey(1)  # Adjust as needed for display speed or saving
+
+            cap.release()
+            cv2.destroyAllWindows()
+        except Exception as e:
+            logging.error("Error processing video file: %s", e)
     def check_user(self):
         info = None
         status = TwitchResponseStatus.ERROR
