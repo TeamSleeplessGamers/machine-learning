@@ -77,7 +77,6 @@ class TwitchRecorder:
         self.token_url = f"https://id.twitch.tv/oauth2/token?client_id={self.client_id}&client_secret={self.client_secret}&grant_type=client_credentials"
         self.url = "https://api.twitch.tv/helix/streams"
         self.access_token = self.fetch_access_token()
-
     def fetch_access_token(self):
         token_response = requests.post(self.token_url, timeout=15)
         token_response.raise_for_status()
