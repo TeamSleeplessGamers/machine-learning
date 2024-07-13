@@ -172,11 +172,14 @@ class TwitchRecorder:
                 record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
                 record_thread.start()
 
+                # Wait for recording thread to finish before starting processing
+                record_thread.join()
+
                 # Start processing in a new thread
                 process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
                 process_thread.start()
 
-                record_thread.join()
+                # Wait for processing thread to finish
                 process_thread.join()
 
                 logging.info("processing is done, going back to checking...")
@@ -276,13 +279,12 @@ def start_recording():
         return jsonify({'message': 'Recording started for user: ' + username})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 # Start the application
 if __name__ == "__main__":
     logging.basicConfig(filename="twitch-recorder.log", level=logging.INFO)
     logging.getLogger().addHandler(logging.StreamHandler())
     try:
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        app.run(debug=True, host='0.0.0.0', port=8000)
     finally:
         driver.quit()
         if conn:
