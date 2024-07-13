@@ -105,6 +105,10 @@ class TwitchRecorder:
         logging.info("checking for %s every %s seconds, recording with %s quality",
                      self.username, self.refresh, self.quality)
         self.loop_check(recorded_path, processed_path)
+    def record_stream(self, recorded_filename):
+        subprocess.call(
+            ["streamlink", "--twitch-disable-ads", "twitch.tv/" + self.username, self.quality,
+             "-o", recorded_filename])
 
     def process_recorded_file(self, recorded_filename, processed_filename):
         if self.disable_ffmpeg:
@@ -161,31 +165,24 @@ class TwitchRecorder:
                 self.access_token = self.fetch_access_token()
             elif status == TwitchResponseStatus.ONLINE:
                 logging.info("%s online, stream recording in session", self.username)
-
-                channels = info["data"]
-                channel = next(iter(channels), None)
-                filename = self.username + " - " + datetime.now() \
-                    .strftime("%Y-%m-%d %Hh%Mm%Ss") + " - " + channel.get("title") + ".mp4"
-
-                # clean filename from unnecessary characters
-                filename = "".join(x for x in filename if x.isalnum() or x in [" ", "-", "_", "."])
-
+                filename = self.username + ".mp4"
                 recorded_filename = os.path.join(recorded_path, filename)
                 processed_filename = os.path.join(processed_path, filename)
 
-                # start streamlink process
-                subprocess.call(
-                    ["streamlink", "--twitch-disable-ads", "twitch.tv/" + self.username, self.quality,
-                     "-o", recorded_filename])
+                # Start recording in a new thread
+                record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
+                record_thread.start()
 
-                logging.info("recording stream is done, processing video file")
-                if os.path.exists(recorded_filename) is True:
-                    self.process_recorded_file(recorded_filename, processed_filename)
-                else:
-                    logging.info("skip fixing, file not found")
+                # Start processing in a new thread
+                process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
+                process_thread.start()
+
+                record_thread.join()
+                process_thread.join()
 
                 logging.info("processing is done, going back to checking...")
                 time.sleep(self.refresh)
+
 
 # Routes
 @app.route('/')
