@@ -121,7 +121,7 @@ class TwitchRecorder:
             logging.info("fixing %s", recorded_filename)
             self.ffmpeg_copy_and_fix_errors(recorded_filename, processed_filename)
         # After processing, use OpenCV VideoCapture to work with the processed video file
-        self.process_with_opencv(processed_filename)
+        self.save_processed_frames(processed_filename)
     def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
         try:
             subprocess.call(
@@ -130,39 +130,35 @@ class TwitchRecorder:
             os.remove(recorded_filename)
         except Exception as e:
             logging.error(e)
-    def process_with_opencv(self, processed_filename):
-        try:
-            cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
-            if not cap.isOpened():
-                logging.error("Error opening video file: %s", processed_filename)
-                return
+    def save_processed_frames(self, processed_filename):
+        cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
+        frame_count = 0
 
-            def display_frames():
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    # Process each frame as needed (example: convert to grayscale)
-                    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        output_folder = "./processed_frames"
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
 
-                    # Display or save processed frames as required
-                    cv2.imshow("Processed Frame", gray_frame)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):  # Press 'q' to exit
-                        break
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Process each frame as needed (example: convert to grayscale)
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-                cap.release()
-                cv2.destroyAllWindows()
+            # Draw a rectangle around a specific area of interest
+            # Example coordinates (x, y, width, height) for the rectangle
+            x, y, width, height = 100, 100, 200, 150
+            cv2.rectangle(gray_frame, (x, y), (x + width, y + height), (0, 255, 0), 2)  # Green rectangle, thickness 2
 
-            # Run display_frames on the main thread
-            if threading.current_thread().name == 'MainThread':
-                display_frames()
-            else:
-                logging.warning("Attempting to display frames from a non-main thread. "
-                                "Move this operation to the main thread.")
-                display_frames()  # For testing purposes, run it on the current thread
+            # Save the processed frame with rectangle to the output folder
+            output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+            cv2.imwrite(output_filename, gray_frame)
 
-        except Exception as e:
-            logging.error("Error processing video file: %s", e)
+            frame_count += 1
+
+        cap.release()
+        cv2.destroyAllWindows()
     def check_user(self):
         info = None
         status = TwitchResponseStatus.ERROR

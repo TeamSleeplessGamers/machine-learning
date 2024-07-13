@@ -4,3 +4,4 @@
 .env
 /recorded
 /processed
+/processed_frames
