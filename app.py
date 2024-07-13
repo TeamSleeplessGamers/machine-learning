@@ -173,21 +173,16 @@ class TwitchRecorder:
             output_filename = os.path.join("./processed_frames", f"frame_{frame_count}.jpg")
             cv2.imwrite(output_filename, frame)
             
-            # Extract the ROI using the template's location
-            roi_margin = 1000  # Example: margin to expand around the detected region
-            roi = frame[max(0, top_left[1] - roi_margin):bottom_right[1] + roi_margin, 
-                max(0, top_left[0] - roi_margin):bottom_right[0] + roi_margin]
-            
-            # Example: Convert the ROI to binary image for OCR processing
-            gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            _, binary_roi = cv2.threshold(gray_roi, 127, 255, cv2.THRESH_BINARY)
-            
+            # Extract the ROI using the rectangle's coordinates
+            roi = frame[y:y+height, x:x+width]
+
             # Save the ROI image to a folder for inspection
             roi_output_filename = os.path.join('./roi_frames', f"roi_{frame_count}.jpg")
-            cv2.imwrite(roi_output_filename, binary_roi)
+            cv2.imwrite(roi_output_filename, roi)
             
             # Example: Use OCR (e.g., pytesseract) to extract text from the ROI
-            text = pytesseract.image_to_string(binary_roi)
+            text = pytesseract.image_to_string(roi)
+            print(f"Text detected in ROI: {text}")
             print(f"Text detected in ROI: {text}")
             
             frame_count += 1
