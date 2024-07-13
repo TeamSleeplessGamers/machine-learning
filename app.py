@@ -133,46 +133,50 @@ class TwitchRecorder:
             logging.error(e)
     def save_processed_frames(self, processed_filename):
         cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
-        frame_count = 0
 
         output_folder = "./processed_frames"
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
 
+        frame_count = 0
+        template = cv2.imread('./game_templates/warzone/interest_1.png', 0)  # Load your template image
+        template_width, template_height = template.shape[::-1]  # Template width and height
+        
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             
-            # Process each frame as needed (example: convert to grayscale)
+            # Process each frame as needed (convert to grayscale)
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            # Draw a rectangle around a specific area of interest
-            # Example coordinates (x, y, width, height) for the rectangle
-            x, y, width, height = 1800, 20, 50, 100
-            cv2.rectangle(gray_frame, (x, y), (x + width, y + height), (0, 255, 0), 2)  # Green rectangle, thickness 2
-
-            # Save the processed frame with rectangle to the output folder
-            output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+            
+            # Perform template matching
+            result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
+            _, _, _, max_loc = cv2.minMaxLoc(result)
+            
+            # Extract top-left and bottom-right coordinates of the detected area
+            top_left = max_loc
+            bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
+            
+            # Draw a rectangle around the detected area
+            cv2.rectangle(gray_frame, top_left, bottom_right, (0, 255, 0), 2)
+            
+            # Save the processed frame with the rectangle to the output folder
+            output_filename = os.path.join("./processed_frames", f"frame_{frame_count}.jpg")
             cv2.imwrite(output_filename, gray_frame)
-            roi = gray_frame[y:y+height, x:x+width]
+            
+            # Extract the ROI using the template's location
+            roi = gray_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+            
             # Example: Convert the ROI to binary image for OCR processing
             _, binary_roi = cv2.threshold(roi, 127, 255, cv2.THRESH_BINARY)
             
             # Example: Use OCR (e.g., pytesseract) to extract text from the ROI
             text = pytesseract.image_to_string(binary_roi)
             print(f"Text detected in ROI: {text}")
-
-            # Example: Apply template matching within the ROI
-            template = cv2.imread('./game_templates/warzone/interest_1.png', 0)  # Load your template image
-            result = cv2.matchTemplate(roi, template, cv2.TM_CCOEFF_NORMED)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-            top_left = max_loc
-            bottom_right = (top_left[0] + template.shape[1], top_left[1] + template.shape[0])
-            cv2.rectangle(frame, top_left, bottom_right, 255, 2)
-
+            
             frame_count += 1
-
+        
         cap.release()
         cv2.destroyAllWindows()
     def check_user(self):
