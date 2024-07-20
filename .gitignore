@@ -1,3 +1,8 @@
 # created by virtualenv automatically
 /lib
 /bin
+.env
+/recorded
+/processed
+/processed_frames
+/roi_frames
