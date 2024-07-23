@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 from dotenv import load_dotenv
+from vision import Vision
 import time
 from datetime import datetime
 from selenium import webdriver
@@ -153,6 +154,10 @@ class TwitchRecorder:
             
             # Process each frame as needed (convert to grayscale)
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            ret, thresh = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
+
+            output_filename = os.path.join("./test_images_gray_frame", f"frame_{frame_count}.jpg")
+            cv2.imwrite(output_filename, thresh)
             
             # Perform template matching
             if template is None:
@@ -182,6 +187,7 @@ class TwitchRecorder:
             # Enhance contrast (optional)
             enhanced_roi = cv2.equalizeHist(gray_roi)
             
+            points = vision_limestone.find(screenshot, 0.5, 'rectangles')
             # Apply adaptive thresholding to create a binary image
             binary_roi = cv2.adaptiveThreshold(enhanced_roi, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
             
@@ -224,18 +230,18 @@ class TwitchRecorder:
             status, info = self.check_user()
             if status == TwitchResponseStatus.NOT_FOUND:
                 logging.error("username not found, invalid username or typo")
-                time.sleep(self.refresh)
+                #time.sleep(self.refresh)
             elif status == TwitchResponseStatus.ERROR:
                 logging.error("%s unexpected error. will try again in 5 minutes",
                               datetime.now().strftime("%Hh%Mm%Ss"))
-                time.sleep(300)
-            elif status == TwitchResponseStatus.OFFLINE:
+                #time.sleep(300)
+            elif False: #status == TwitchResponseStatus.OFFLINE:
                 logging.info("%s currently offline, checking again in %s seconds", self.username, self.refresh)
-                time.sleep(self.refresh)
+                #time.sleep(self.refresh)
             elif status == TwitchResponseStatus.UNAUTHORIZED:
                 logging.info("unauthorized, will attempt to log back in immediately")
                 self.access_token = self.fetch_access_token()
-            elif status == TwitchResponseStatus.ONLINE:
+            elif True: #status == TwitchResponseStatus.ONLINE:
                 logging.info("%s online, stream recording in session", self.username)
                 filename = self.username + ".mp4"
                 recorded_filename = os.path.join(recorded_path, filename)
