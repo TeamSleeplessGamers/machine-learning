@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify, redirect, session
 from flask_cors import CORS
 from dotenv import load_dotenv
 from vision import Vision
+from hsvfilter import HsvFilter
+from edgefilter import EdgeFilter
 import time
 from datetime import datetime
 from selenium import webdriver
@@ -13,6 +15,7 @@ import requests
 import pytesseract
 import os
 import cv2
+import cv2 as cv
 import psycopg2
 import subprocess
 import logging
@@ -32,6 +35,7 @@ redirect_uri = os.getenv('STREAM_LABS_REDIRECT')
 token_url = 'https://streamlabs.com/api/v2.0/token'
 oauth_url = 'https://streamlabs.com/api/v2.0/authorize'
 database_url = os.getenv('DATABASE_URL')
+vision_kill_skull = Vision('./game_templates/warzone/interest_3.jpg')
 
 # Configure Chrome options
 chrome_options = Options()
@@ -45,6 +49,9 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 
 # Global database connection
 conn = None
+
+# skull HSV filter
+hsv_filter = HsvFilter(0, 180, 129, 15, 229, 243, 143, 0, 67, 0)
 
 def initialize_database():
     global conn
@@ -152,6 +159,48 @@ class TwitchRecorder:
             if frame is None:
                 continue
             
+            # pre-process the image
+            processed_image = vision_kill_skull.apply_hsv_filter(frame)
+             
+            # do edge detection
+            edges_image = vision_kill_skull.apply_edge_filter(processed_image)
+
+            # do object detection
+            #rectangles = vision_limestone.find(processed_image, 0.46)
+
+            # draw the detection results onto the original image
+            #output_image = vision_limestone.draw_rectangles(screenshot, rectangles)
+
+            # keypoint searching
+            keypoint_image = edges_image
+            # crop the image to remove the ui elements
+            x, w, y, h = [200, 1130, 70, 750]
+            keypoint_image = keypoint_image[y:y+h, x:x+w]
+
+            kp1, kp2, matches, match_points = vision_kill_skull.match_keypoints(keypoint_image)
+            match_image = cv.drawMatches(
+                vision_kill_skull.needle_img, 
+                kp1, 
+                keypoint_image, 
+                kp2, 
+                matches, 
+                None)
+
+            if match_points:
+                # find the center point of all the matched features
+                center_point = vision_kill_skull.centeroid(match_points)
+                # account for the width of the needle image that appears on the left
+                center_point[0] += vision_kill_skull.needle_w
+                # drawn the found center point on the output image
+                match_image = vision_kill_skull.draw_crosshairs(match_image, [center_point])
+
+            # Try attempting to create rectangle over image
+            rectangles = vision_kill_skull.find(frame, 0.5, 'rectangles')
+            output_image = vision_kill_skull.draw_rectangles(frame, rectangles)
+
+            output_filename = os.path.join("./test_images_output_image", f"frame_{frame_count}.jpg")
+            cv2.imwrite(output_filename, output_image)
+
             # Process each frame as needed (convert to grayscale)
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             ret, thresh = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
@@ -187,7 +236,6 @@ class TwitchRecorder:
             # Enhance contrast (optional)
             enhanced_roi = cv2.equalizeHist(gray_roi)
             
-            points = vision_limestone.find(screenshot, 0.5, 'rectangles')
             # Apply adaptive thresholding to create a binary image
             binary_roi = cv2.adaptiveThreshold(enhanced_roi, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
             
@@ -352,6 +400,7 @@ def start_recording():
         return jsonify({'message': 'Recording started for user: ' + username})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 # Start the application
 if __name__ == "__main__":
     logging.basicConfig(filename="twitch-recorder.log", level=logging.INFO)
