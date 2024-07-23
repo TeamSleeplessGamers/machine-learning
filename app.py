@@ -120,8 +120,8 @@ class TwitchRecorder:
              "-o", recorded_filename])
 
     def process_recorded_file(self, recorded_filename, processed_filename):
-        #if os.path.exists(processed_filename):
-        #    os.remove(processed_filename)  # Delete existing processed file if it exists
+        if os.path.exists(processed_filename):
+            os.remove(processed_filename)  # Delete existing processed file if it exists
 
         if self.disable_ffmpeg:
             logging.info("moving: %s", recorded_filename)
@@ -130,7 +130,7 @@ class TwitchRecorder:
             logging.info("fixing %s", recorded_filename)
             self.ffmpeg_copy_and_fix_errors(recorded_filename, processed_filename)
         # After processing, use OpenCV VideoCapture to work with the processed video file
-        self.save_processed_frames(processed_filename)
+        #self.save_processed_frames(processed_filename)
     def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
         try:
             subprocess.call(
@@ -159,48 +159,11 @@ class TwitchRecorder:
             if frame is None:
                 continue
             
-            # pre-process the image
-            processed_image = vision_kill_skull.apply_hsv_filter(frame)
-             
-            # do edge detection
-            edges_image = vision_kill_skull.apply_edge_filter(processed_image)
-
             # do object detection
             #rectangles = vision_limestone.find(processed_image, 0.46)
 
             # draw the detection results onto the original image
             #output_image = vision_limestone.draw_rectangles(screenshot, rectangles)
-
-            # keypoint searching
-            keypoint_image = edges_image
-            # crop the image to remove the ui elements
-            x, w, y, h = [200, 1130, 70, 750]
-            keypoint_image = keypoint_image[y:y+h, x:x+w]
-
-            kp1, kp2, matches, match_points = vision_kill_skull.match_keypoints(keypoint_image)
-            match_image = cv.drawMatches(
-                vision_kill_skull.needle_img, 
-                kp1, 
-                keypoint_image, 
-                kp2, 
-                matches, 
-                None)
-
-            if match_points:
-                # find the center point of all the matched features
-                center_point = vision_kill_skull.centeroid(match_points)
-                # account for the width of the needle image that appears on the left
-                center_point[0] += vision_kill_skull.needle_w
-                # drawn the found center point on the output image
-                match_image = vision_kill_skull.draw_crosshairs(match_image, [center_point])
-
-            # Try attempting to create rectangle over image
-            rectangles = vision_kill_skull.find(frame, 0.5, 'rectangles')
-            output_image = vision_kill_skull.draw_rectangles(frame, rectangles)
-
-            output_filename = os.path.join("./test_images_output_image", f"frame_{frame_count}.jpg")
-            cv2.imwrite(output_filename, output_image)
-
             # Process each frame as needed (convert to grayscale)
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             ret, thresh = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
@@ -214,39 +177,18 @@ class TwitchRecorder:
             
             result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
             _, _, _, max_loc = cv2.minMaxLoc(result)
-            
-            # Extract top-left and bottom-right coordinates of the detected area
-            top_left = max_loc
-            bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
-            
-            # Draw a rectangle around the detected area
-            x, y, width, height = 1800, 20, 50, 100
-            cv2.rectangle(frame, (x, y), (x + width, y + height), (0, 255, 0), 2)  # Green rectangle, thickness 2
 
-            # Save the processed frame with the rectangle to the output folder
-            output_filename = os.path.join("./processed_frames", f"frame_{frame_count}.jpg")
-            cv2.imwrite(output_filename, frame)
-            
+            # Draw a rectangle around the detected area
+            x, y, width, height = 1800, 40, 50, 50
+            cv2.rectangle(frame, (x, y), (x + width, y + height), (0, 255, 0), 2)  # Green rectangle, thickness 2
             # Extract the ROI using the rectangle's coordinates
             roi = frame[y:y+height, x:x+width]
-
-            # Convert ROI to grayscale
-            gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            
-            # Enhance contrast (optional)
-            enhanced_roi = cv2.equalizeHist(gray_roi)
-            
-            # Apply adaptive thresholding to create a binary image
-            binary_roi = cv2.adaptiveThreshold(enhanced_roi, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-            
-            # Save the ROI image to a folder for inspection (binary image)
-            roi_output_filename = os.path.join('./roi_frames', f"roi_{frame_count}.jpg")
-            cv2.imwrite(roi_output_filename, binary_roi)
-            
+  
             # Example: Use OCR (e.g., pytesseract) to extract text from the ROI
-            text = pytesseract.image_to_string(binary_roi, config='outputbase digits')
-            print(f"Text detected in ROI: {text}")
+            text = pytesseract.image_to_string(roi, config='--psm 13')
             
+            if len(text) > 0:
+                print(f"Text detected in ROI: {frame_count} - {text}")
             frame_count += 1
 
         cap.release()
@@ -278,18 +220,18 @@ class TwitchRecorder:
             status, info = self.check_user()
             if status == TwitchResponseStatus.NOT_FOUND:
                 logging.error("username not found, invalid username or typo")
-                #time.sleep(self.refresh)
+                time.sleep(self.refresh)
             elif status == TwitchResponseStatus.ERROR:
                 logging.error("%s unexpected error. will try again in 5 minutes",
                               datetime.now().strftime("%Hh%Mm%Ss"))
-                #time.sleep(300)
-            elif False: #status == TwitchResponseStatus.OFFLINE:
+                time.sleep(300)
+            elif status == TwitchResponseStatus.OFFLINE:
                 logging.info("%s currently offline, checking again in %s seconds", self.username, self.refresh)
-                #time.sleep(self.refresh)
+                time.sleep(self.refresh)
             elif status == TwitchResponseStatus.UNAUTHORIZED:
                 logging.info("unauthorized, will attempt to log back in immediately")
                 self.access_token = self.fetch_access_token()
-            elif True: #status == TwitchResponseStatus.ONLINE:
+            elif status == TwitchResponseStatus.ONLINE:
                 logging.info("%s online, stream recording in session", self.username)
                 filename = self.username + ".mp4"
                 recorded_filename = os.path.join(recorded_path, filename)
@@ -300,8 +242,8 @@ class TwitchRecorder:
                 #record_thread.start()
 
                 # Start processing in a new thread
-                process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
-                process_thread.start()
+                #process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
+                #process_thread.start()
 
                 logging.info("processing and recording started, going back to checking...")
                 time.sleep(self.refresh)
