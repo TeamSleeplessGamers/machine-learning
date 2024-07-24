@@ -321,6 +321,102 @@ def scrape():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def match_template_in_video(video_path, template_path, output_folder, threshold=0.8, save_as_images=True):
+    # Create the output folder if it does not exist
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Generate a unique filename for the output video
+    timestamp = int(time.time())
+    output_video_path = os.path.join(output_folder, f'output_video_{timestamp}.mp4')
+
+    # Load the template image
+    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+    if template is None:
+        print("Error: Cannot load template image.")
+        return
+
+    template_height, template_width = template.shape
+
+    # Open the video file
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Error: Cannot open video file.")
+        return
+
+    # Get video properties
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Use the 'H264' codec for .mp4 files
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
+    
+    if not save_as_images:
+        # Initialize the video writer
+        out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+        if not out.isOpened():
+            print("Error: Cannot open video writer.")
+            cap.release()
+            return
+
+    frame_count = 0
+
+    # Process the video frames
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame_count += 1
+        if frame_count % 30 == 0:
+            print(f"Processing frame {frame_count}")
+
+        # Convert the frame to grayscale
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # Apply template matching
+        result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+        # Initialize variables
+        top_left = None
+        bottom_right = None
+
+        # Check if the best match is above the threshold
+        if max_val >= threshold:
+            top_left = max_loc
+            bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
+
+        # Draw a rectangle around the matched region if a match was found
+        if top_left is not None and bottom_right is not None:
+            cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
+
+        # Save the frame
+        if save_as_images:
+            output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+            cv2.imwrite(output_filename, frame)
+        else:
+            out.write(frame)
+
+    print(f"Processed {frame_count} frames")
+
+    # Release resources
+    cap.release()
+    if not save_as_images:
+        out.release()
+    cv2.destroyAllWindows()
+
+@app.route('/match_template', methods=['POST'])
+def match_template_route():
+    output_folder = "./test_video"
+
+    # Call the match_template_in_video function
+    match_template_in_video("./processed/xressolve/xressolve.mp4", "./game_templates/warzone/interest_3.jpg", output_folder)
+
+    return jsonify({'status': 'success', 'message': 'Processing completed.'})
+
+
 @app.route('/shutdown', methods=['POST'])
 def shutdown():
     shutdown_func = request.environ.get('werkzeug.server.shutdown')
