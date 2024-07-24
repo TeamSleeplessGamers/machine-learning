@@ -321,7 +321,7 @@ def scrape():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def match_template_in_video(video_path, template_path, output_folder, threshold=0.5, save_as_images=True):
+def match_template_in_video(video_path, template_path, output_folder, threshold=0.95, save_as_images=True):
     # Create the output folder if it does not exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -379,9 +379,6 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         y_start = 0
         cropped_frame = frame[y_start:y_start + height, x_start:x_start + width]
 
-        # Convert the cropped frame to grayscale
-        gray_frame = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
-
         # Check if the template size is appropriate for the cropped frame
         if (template_height > cropped_frame.shape[0]):
             print("Warning: Template is larger than the cropped frame. Skipping this frame.")
@@ -396,7 +393,7 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
             template = template.astype(cropped_frame.dtype)
 
         # Apply template matching
-        result = cv2.matchTemplate(cropped_frame, template, cv2.TM_CCOEFF_NORMED)
+        result = cv2.matchTemplate(cropped_frame, template, cv2.TM_SQDIFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
         print("Max value:", max_val)
 
@@ -408,7 +405,7 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         if max_val >= threshold:
             top_left = max_loc
             bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
-
+            print(frame_count, "frame here", top_left, "what is template width", bottom_right)
             # Draw a rectangle around the matched region if a match was found
             if top_left is not None and bottom_right is not None:
                 cv2.rectangle(cropped_frame, top_left, bottom_right, (0, 255, 0), 2)
