@@ -321,7 +321,7 @@ def scrape():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def match_template_in_video(video_path, template_path, output_folder, threshold=0.8, save_as_images=True):
+def match_template_in_video(video_path, template_path, output_folder, threshold=0.5, save_as_images=True):
     # Create the output folder if it does not exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -348,10 +348,10 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
+
     # Use the 'H264' codec for .mp4 files
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
-    
+
     if not save_as_images:
         # Initialize the video writer
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
@@ -372,12 +372,33 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         if frame_count % 30 == 0:
             print(f"Processing frame {frame_count}")
 
-        # Convert the frame to grayscale
-        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Crop the frame to the top-right corner with height 100 pixels
+        height = 200
+        width = int((height / frame.shape[0]) * frame.shape[1])
+        x_start = frame.shape[1] - width
+        y_start = 0
+        cropped_frame = frame[y_start:y_start + height, x_start:x_start + width]
+
+        # Convert the cropped frame to grayscale
+        gray_frame = cv2.cvtColor(cropped_frame, cv2.COLOR_BGR2GRAY)
+
+        # Check if the template size is appropriate for the cropped frame
+        if (template_height > cropped_frame.shape[0]):
+            print("Warning: Template is larger than the cropped frame. Skipping this frame.")
+            continue
+
+        # Convert the template to match the frame's type and depth
+        if len(cropped_frame.shape) == 3 and len(template.shape) == 2:  # Color frame and grayscale template
+            template = cv2.cvtColor(template, cv2.COLOR_GRAY2BGR)
+
+        # Ensure both cropped_frame and template have the same depth and type
+        if cropped_frame.dtype != template.dtype:
+            template = template.astype(cropped_frame.dtype)
 
         # Apply template matching
-        result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
+        result = cv2.matchTemplate(cropped_frame, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+        print("Max value:", max_val)
 
         # Initialize variables
         top_left = None
@@ -388,16 +409,16 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
             top_left = max_loc
             bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
 
-        # Draw a rectangle around the matched region if a match was found
-        if top_left is not None and bottom_right is not None:
-            cv2.rectangle(frame, top_left, bottom_right, (0, 255, 0), 2)
+            # Draw a rectangle around the matched region if a match was found
+            if top_left is not None and bottom_right is not None:
+                cv2.rectangle(cropped_frame, top_left, bottom_right, (0, 255, 0), 2)
 
-        # Save the frame
-        if save_as_images:
-            output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
-            cv2.imwrite(output_filename, frame)
-        else:
-            out.write(frame)
+            # Save the frame if the threshold is met
+            if save_as_images:
+                output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+                cv2.imwrite(output_filename, cropped_frame)
+            else:
+                out.write(cropped_frame)
 
     print(f"Processed {frame_count} frames")
 
@@ -412,7 +433,7 @@ def match_template_route():
     output_folder = "./test_video"
 
     # Call the match_template_in_video function
-    match_template_in_video("./processed/xressolve/xressolve.mp4", "./game_templates/warzone/interest_3.jpg", output_folder)
+    match_template_in_video("./processed/xressolve/xressolve.mp4", "./game_templates/warzone/interest_1.jpg", output_folder)
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
