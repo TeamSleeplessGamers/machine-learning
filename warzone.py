@@ -1,6 +1,7 @@
 import cv2
 import pytesseract
 import time
+import os
 import logging
 from collections import deque
 from firebase_admin import db
@@ -68,6 +69,10 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         return
     frame_count = 0
 
+    # Create a directory to store processed frames
+    processed_frames_dir = f"./processed_frames/{user_id}"
+    os.makedirs(processed_frames_dir, exist_ok=True)
+
     # Process the video frames
     while cap.isOpened():
         ret, frame = cap.read()
@@ -93,6 +98,11 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
         custom_config = r'--oem 3 --psm 6'
         detected_text = pytesseract.image_to_string(frame_scale_abs, config=custom_config)
+
+
+        # Save the processed frame
+        frame_filename = os.path.join(processed_frames_dir, f"frame_{frame_count}.jpg")
+        cv2.imwrite(frame_filename, frame)
 
         # Search for the word "SPECTATING" in the detected text (case-insensitive)
         if "spectating".lower() in detected_text.lower():
