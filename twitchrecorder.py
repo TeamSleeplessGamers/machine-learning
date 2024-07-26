@@ -49,17 +49,6 @@ class TwitchRecorder:
         return token["access_token"]
 
     def run(self):
-        # path to recorded stream
-        recorded_path = os.path.join(self.root_path, "recorded", self.username)
-        # path to finished video, errors removed
-        processed_path = os.path.join(self.root_path, "processed", self.username)
-
-        # create directory for recordedPath and processedPath if not exist
-        if os.path.isdir(recorded_path) is False:
-            os.makedirs(recorded_path)
-        if os.path.isdir(processed_path) is False:
-            os.makedirs(processed_path)
-
         # make sure the interval to check user availability is not less than 15 seconds
         if self.refresh < 15:
             logging.warning("check interval should not be lower than 15 seconds")
@@ -68,7 +57,7 @@ class TwitchRecorder:
 
         logging.info("checking for %s every %s seconds, recording with %s quality",
                      self.username, self.refresh, self.quality)
-        self.loop_check(recorded_path, processed_path)
+        self.loop_check()
     def record_stream(self, recorded_filename):
         subprocess.call(
             ["streamlink", "--twitch-disable-ads", "twitch.tv/" + self.username, self.quality,
@@ -175,7 +164,7 @@ class TwitchRecorder:
                     status = TwitchResponseStatus.NOT_FOUND
         return status, info
 
-    def loop_check(self, recorded_path, processed_path):
+    def loop_check(self):
         while True:
             status, info = self.check_user()
             if status == TwitchResponseStatus.NOT_FOUND:
