@@ -495,7 +495,7 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
     cv2.destroyAllWindows()
 
 # Function to update Firebase when the threshold is met
-def update_firebase(user_id, event_id):
+def update_firebase(user_id, event_id, is_spectating):
     try:
         # Create a valid path
         path = f'event-{event_id}/{user_id}'
@@ -504,12 +504,10 @@ def update_firebase(user_id, event_id):
 
         # Update Firebase
         db_ref.update({
-            'isSpectating': True,
+            'isSpectating': is_spectating,
         })
     except Exception as e:
         print(f"Error updating Firebase: {e}")
-
-
 
 def match_template_spectating_in_video( video_path,
     template_path,
@@ -644,9 +642,9 @@ def match_template_spectating_in_video( video_path,
 
         # Check if the threshold is reached
         if all(count > 0 for count in frame_buffer):
-            update_firebase(user_id, event_id)
+            update_firebase(user_id, event_id, True)
         else:
-            print("Word 'SPECTATING' not confirmed yet.")
+            update_firebase(user_id, event_id, False)
             
     # Release resources
     cap.release()
