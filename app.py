@@ -247,6 +247,7 @@ def match_template_spectating_route(event_id):
     try:
         recorder = TwitchRecorder(twitch_channel, event_id, user_id)
         threading.Thread(target=recorder.run).start()
+        
         return jsonify({'message': 'Recording started for user: ' + twitch_channel})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

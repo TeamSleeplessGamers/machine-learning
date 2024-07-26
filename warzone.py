@@ -26,7 +26,7 @@ def analyze_buffer(buffer, threshold=10):
             pattern_detected = True
             
     return pattern_detected
-
+    
 def update_firebase(user_id, event_id, is_spectating, max_retries=3):
     path = f'event-{event_id}/{user_id}'
     db_ref = db.reference(path)
@@ -80,6 +80,10 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         blurred_frame = cv2.GaussianBlur(binary_frame, (5, 5), 0)
         detected_text = pytesseract.image_to_string(blurred_frame)
 
+        # Save the processed frame to the specified directory
+        frame_path = f'./process_frames/frame_{frame_count}.jpg'
+        cv2.imwrite(frame_path, blurred_frame)
+        
         # Search for the word "SPECTATING" in the detected text (case-insensitive)
         if "spectating".lower() in detected_text.lower():
             detection_count += 1

@@ -23,7 +23,7 @@ client_secret = os.getenv('CLIENT_SECRET')
  
 class TwitchRecorder:
     def __init__(self, username, event_id=None, user_id=None):
-                # global configuration
+        # global configuration
         self.username = username
         self.event_id = event_id
         self.user_id = user_id
@@ -74,17 +74,19 @@ class TwitchRecorder:
             ["streamlink", "--twitch-disable-ads", "twitch.tv/" + self.username, self.quality,
              "-o", recorded_filename])
 
-    def process_recorded_file(self, recorded_filename, processed_filename):
-        if os.path.exists(processed_filename):
-            os.remove(processed_filename)  # Delete existing processed file if it exists
-
-        if self.disable_ffmpeg:
-            logging.info("moving: %s", recorded_filename)
-            shutil.move(recorded_filename, processed_filename)
-        else:
-            logging.info("fixing %s", recorded_filename)
-            self.ffmpeg_copy_and_fix_errors(recorded_filename, processed_filename)
-        self.processed_match_template_spectating(processed_filename)
+    def get_live_stream_url(self, twitch_profile):
+        try:
+            result = subprocess.run(
+                ["streamlink", "--twitch-disable-ads", f"https://twitch.tv/{twitch_profile}", "best", "--stream-url"],
+                check=True, text=True, capture_output=True
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            print(f"Error: {e.stderr}")
+            return None
+    def process_recorded_file(self):
+        stream_url = self.get_live_stream_url(self.username)
+        self.processed_match_template_spectating(stream_url)
         # After processing, use OpenCV VideoCapture to work with the processed video file
         #self.save_processed_frames(processed_filename)
     def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
@@ -191,16 +193,9 @@ class TwitchRecorder:
                 self.access_token = self.fetch_access_token()
             elif status == TwitchResponseStatus.ONLINE:
                 logging.info("%s online, stream recording in session", self.username)
-                filename = self.username + ".mp4"
-                recorded_filename = os.path.join(recorded_path, filename)
-                processed_filename = os.path.join(processed_path, filename)
-
-                # Start recording in a new thread
-                record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
-                record_thread.start()
-
+                
                 # Start processing in a new thread
-                process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
+                process_thread = threading.Thread(target=self.process_recorded_file)
                 process_thread.start()
 
                 logging.info("processing and recording started, going back to checking...")
