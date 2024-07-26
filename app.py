@@ -492,20 +492,24 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
 
 # Function to update Firebase when the threshold is met
 def update_firebase(user_id, event_id):
-    db_ref = db.reference(f'events/event-{event_id}/spectators/{user_id}')
-    timeStampNow = datetime.datetime.utcnow().isoformat()
+    db_ref = db.reference(f'event-{event_id}/{user_id}')
 
     try:
         db_ref.update({
             'isSpectating': True,
-            'startTime': timeStampNow
         })
         print("Firebase updated successfully.")
     except Exception as e:
         print(f"Error updating Firebase: {e}")
 
 
-def match_template_spectating_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
+def match_template_spectating_in_video( video_path,
+    template_path,
+    output_folder,
+    event_id=None,
+    user_id=None,
+    threshold=0.1,
+    save_as_images=True):
     global detection_count
     global frame_buffer
     
@@ -661,9 +665,19 @@ def match_template_spectating_route(event_id):
     output_folder = "./test_spectating_video"
     video_path = "./processed/test_1.mp4"
     template_path = "./game_templates/warzone/spectating_1.jpg"
+    threshold = 0.1
+    save_as_images = True
 
     # Call the match_template_in_video function
-    match_template_spectating_in_video(video_path, template_path, output_folder, event_id, user_id)
+    match_template_spectating_in_video(
+        video_path,
+        template_path,
+        output_folder,
+        threshold,
+        save_as_images,
+        event_id,
+        user_id
+    )
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
