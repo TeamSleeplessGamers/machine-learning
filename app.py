@@ -645,7 +645,6 @@ def match_template_spectating_in_video( video_path,
         # Check if the threshold is reached
         if all(count > 0 for count in frame_buffer):
             update_firebase(user_id, event_id)
-            # Store result or trigger action
         else:
             print("Word 'SPECTATING' not confirmed yet.")
             
@@ -676,18 +675,14 @@ def match_template_spectating_route(event_id):
     threshold = 0.1
     save_as_images = True
 
-  # Call the match_template_spectating_in_video function
-    match_template_spectating_in_video(
-        video_path,
-        template_path,
-        output_folder,
-        event_id=event_id,
-        user_id=user_id,
-        threshold=threshold,
-        save_as_images=save_as_images
+    # Start the background thread
+    thread = threading.Thread(
+        target=match_template_spectating_in_video,
+        args=(video_path, template_path, output_folder, event_id, user_id, threshold, save_as_images)
     )
+    thread.start()
 
-    return jsonify({'status': 'success', 'message': 'Processing completed.'})
+    return jsonify({'status': 'success', 'message': 'Processing started.'})
 
 
 @app.route('/shutdown', methods=['POST'])
