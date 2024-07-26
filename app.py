@@ -494,20 +494,22 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         out.release()
     cv2.destroyAllWindows()
 
-# Function to update Firebase when the threshold is met
-def update_firebase(user_id, event_id, is_spectating):
-    try:
-        # Create a valid path
-        path = f'event-{event_id}/{user_id}'
-        # Get database reference
-        db_ref = db.reference(path)
+def update_firebase(user_id, event_id, is_spectating, max_retries=3):
+    path = f'event-{event_id}/{user_id}'
+    db_ref = db.reference(path)
+    
+    for attempt in range(max_retries):
+        try:
+            # Update Firebase
+            db_ref.update({
+                'isSpectating': is_spectating,
+            })
+            logging.info(f"Firebase updated successfully for event {event_id}, user {user_id}.")
+            break  # Exit loop if successful
+        except Exception as e:
+            logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
+            time.sleep(2)  # Wait before retrying
 
-        # Update Firebase
-        db_ref.update({
-            'isSpectating': is_spectating,
-        })
-    except Exception as e:
-        print(f"Error updating Firebase: {e}")
 
 def match_template_spectating_in_video( video_path,
     template_path,
