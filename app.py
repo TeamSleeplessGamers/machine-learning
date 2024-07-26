@@ -579,8 +579,11 @@ def match_template_spectating_in_video( video_path,
             break
 
         frame_count += 1
-        if frame_count % 30 == 0:
-            print(f"Processing frame {frame_count}")
+        if frame_count % 24 != 0:
+            continue
+
+        print(f"Processing frame {frame_count}")
+
 
         # Crop the frame to the top-right corner with height 200 pixels
         height = 200
@@ -640,9 +643,6 @@ def match_template_spectating_in_video( video_path,
         # Perform OCR
         detected_text = pytesseract.image_to_string(blurred_frame)
 
-        output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
-        cv2.imwrite(output_filename, blurred_frame)
-      
         # Search for the word "SPECTATING" in the detected text (case-insensitive)
         # Check if the word is in the detected text
         if "spectating".lower() in detected_text.lower():
@@ -656,11 +656,9 @@ def match_template_spectating_in_video( video_path,
 
         # Check if the threshold is reached
         if pattern_found:
-            #update_firebase(user_id, event_id, False)
-            print("Unfounr found")
+            update_firebase(user_id, event_id, False)
         else:
-            #update_firebase(user_id, event_id, True)
-            print("Spectating found")
+            update_firebase(user_id, event_id, True)
             
     # Release resources
     cap.release()
