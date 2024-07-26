@@ -6,7 +6,6 @@ import os
 import cv2
 import subprocess
 import logging
-import shutil
 import enum
 import threading
 from warzone import match_template_spectating_in_video
@@ -49,12 +48,10 @@ class TwitchRecorder:
         return token["access_token"]
 
     def run(self):
-        # make sure the interval to check user availability is not less than 15 seconds
         if self.refresh < 15:
             logging.warning("check interval should not be lower than 15 seconds")
             self.refresh = 15
             logging.info("system set check interval to 15 seconds")
-
         logging.info("checking for %s every %s seconds, recording with %s quality",
                      self.username, self.refresh, self.quality)
         self.loop_check()
