@@ -35,8 +35,7 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
             db_ref.update({
                 'isSpectating': is_spectating,
             })
-            logging.info(f"Firebase updated successfully for event {event_id}, user {user_id}.")
-            break  # Exit loop if successful
+            break
         except Exception as e:
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)  # Wait before retrying
