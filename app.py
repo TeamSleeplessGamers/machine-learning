@@ -510,6 +510,17 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)  # Wait before retrying
 
+def analyze_buffer(buffer):
+    # Example threshold for defining a pattern
+    threshold = 10  # Number of consistent frames to define a pattern
+
+    # Count occurrences of each value
+    counts = {i: buffer.count(i) for i in set(buffer)}
+    
+    # Example pattern: Detect if a number (e.g., 0) appears frequently
+    pattern_detected = counts.get(0, 0) > threshold
+    
+    return pattern_detected
 
 def match_template_spectating_in_video( video_path,
     template_path,
@@ -641,12 +652,15 @@ def match_template_spectating_in_video( video_path,
 
         # Add the processed frame to the buffer
         frame_buffer.append(detection_count)
+        pattern_found = analyze_buffer(frame_buffer)
 
         # Check if the threshold is reached
-        if all(count > 0 for count in frame_buffer):
-            update_firebase(user_id, event_id, True)
+        if pattern_found:
+            #update_firebase(user_id, event_id, False)
+            print("Unfounr found")
         else:
-            update_firebase(user_id, event_id, False)
+            #update_firebase(user_id, event_id, True)
+            print("Spectating found")
             
     # Release resources
     cap.release()
