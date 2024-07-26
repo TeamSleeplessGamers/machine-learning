@@ -3,6 +3,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from vision import Vision
 from hsvfilter import HsvFilter
+from firebase import initialize_firebase
 from edgefilter import EdgeFilter
 from firebase_admin import db
 import time
@@ -31,6 +32,9 @@ load_dotenv()  # Load environment variables from .env file
 app = Flask(__name__)
 CORS(app, origins='*')  # Enable CORS for all origins
 app.secret_key = os.urandom(24)
+
+# Initialize Firebase when the server starts
+initialize_firebase()
 
 client_id = os.getenv('CLIENT_ID')
 client_secret = os.getenv('CLIENT_SECRET')
@@ -492,15 +496,20 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
 
 # Function to update Firebase when the threshold is met
 def update_firebase(user_id, event_id):
-    db_ref = db.reference(f'event-{event_id}/{user_id}')
-
     try:
+        # Create a valid path
+        path = f'event-{event_id}/{user_id}'
+        # Get database reference
+        db_ref = db.reference(path)
+
+        # Update Firebase
         db_ref.update({
-            'isSpectating': True,
+            'isSpectating': False,
         })
         print("Firebase updated successfully.")
     except Exception as e:
         print(f"Error updating Firebase: {e}")
+
 
 
 def match_template_spectating_in_video( video_path,
@@ -635,7 +644,7 @@ def match_template_spectating_in_video( video_path,
         frame_buffer.append(detection_count)
 
         # Check if the threshold is reached
-        if sum(frame_buffer) >= threshold:
+        if all(count > 0 for count in frame_buffer):
             update_firebase(user_id, event_id)
             # Store result or trigger action
         else:
@@ -668,15 +677,15 @@ def match_template_spectating_route(event_id):
     threshold = 0.1
     save_as_images = True
 
-    # Call the match_template_in_video function
+  # Call the match_template_spectating_in_video function
     match_template_spectating_in_video(
         video_path,
         template_path,
         output_folder,
-        threshold,
-        save_as_images,
-        event_id,
-        user_id
+        event_id=event_id,
+        user_id=user_id,
+        threshold=threshold,
+        save_as_images=save_as_images
     )
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
