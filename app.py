@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from vision import Vision
 from hsvfilter import HsvFilter
 from edgefilter import EdgeFilter
+from firebase_admin import db
 import time
 from datetime import datetime
 from collections import deque
@@ -489,7 +490,25 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         out.release()
     cv2.destroyAllWindows()
 
+# Function to update Firebase when the threshold is met
+def update_firebase(user_id, event_id):
+    db_ref = db.reference(f'events/event-{event_id}/spectators/{user_id}')
+    timeStampNow = datetime.datetime.utcnow().isoformat()
+
+    try:
+        db_ref.update({
+            'isSpectating': True,
+            'startTime': timeStampNow
+        })
+        print("Firebase updated successfully.")
+    except Exception as e:
+        print(f"Error updating Firebase: {e}")
+
+
 def match_template_spectating_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
+    global detection_count
+    global frame_buffer
+    
     # Create the output folder if it does not exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -556,9 +575,6 @@ def match_template_spectating_in_video(video_path, template_path, output_folder,
 
         resized_frame = cv2.resize(cropped_frame, (new_width, new_height))
 
-        # Convert the resized frame to grayscale
-        gray_cropped_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
-
         # Convert frame to grayscale if it is not already
         if frame.ndim == 3:  # Color image (BGR)
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -605,11 +621,22 @@ def match_template_spectating_in_video(video_path, template_path, output_folder,
         cv2.imwrite(output_filename, blurred_frame)
       
         # Search for the word "SPECTATING" in the detected text (case-insensitive)
-        search_word = "SPECTATING".lower()
-        if search_word in detected_text.lower():
-            print(f"Word '{search_word.upper()}' found in the detected text.")
+        # Check if the word is in the detected text
+        if "spectating".lower() in detected_text.lower():
+            detection_count += 1
         else:
-            print(f"Word '{search_word.upper()}' not found in the detected text.", detected_text)
+            detection_count = 0  # Reset count if word is not detected
+
+        # Add the processed frame to the buffer
+        frame_buffer.append(detection_count)
+
+        # Check if the threshold is reached
+        if sum(frame_buffer) >= threshold:
+            update_firebase(user_id, event_id)
+            # Store result or trigger action
+        else:
+            print("Word 'SPECTATING' not confirmed yet.")
+            
     # Release resources
     cap.release()
     if not save_as_images:
@@ -625,12 +652,18 @@ def match_template_route():
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
-@app.route('/match_template_spectating', methods=['POST'])
-def match_template_spectating_route():
+@app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
+def match_template_spectating_route(event_id):
+    user_id = request.json.get('user_id')
+    if not user_id:
+        return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
+
     output_folder = "./test_spectating_video"
+    video_path = "./processed/test_1.mp4"
+    template_path = "./game_templates/warzone/spectating_1.jpg"
 
     # Call the match_template_in_video function
-    match_template_spectating_in_video("./processed/test_1.mp4", "./game_templates/warzone/spectating_1.jpg", output_folder)
+    match_template_spectating_in_video(video_path, template_path, output_folder, event_id, user_id)
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
