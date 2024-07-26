@@ -510,16 +510,17 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)  # Wait before retrying
 
-def analyze_buffer(buffer):
-    # Example threshold for defining a pattern
-    threshold = 10  # Number of consistent frames to define a pattern
-
-    # Count occurrences of each value
-    counts = {i: buffer.count(i) for i in set(buffer)}
+def analyze_buffer(buffer, threshold=10):
+    # Check if the buffer has consistent zeros (indicating "SPECTATING" has not been found)
+    pattern_detected = False
     
-    # Example pattern: Detect if a number (e.g., 0) appears frequently
-    pattern_detected = counts.get(0, 0) > threshold
-    
+    # Ensure we only check when buffer is filled to its maxlen
+    if len(buffer) == buffer.maxlen:
+        zero_count = buffer.count(0)
+        # If the count of zeros is greater than the threshold, return False
+        if zero_count >= threshold:
+            pattern_detected = True
+            
     return pattern_detected
 
 def match_template_spectating_in_video(video_path,
@@ -569,12 +570,11 @@ def match_template_spectating_in_video(video_path,
             detection_count = 0 
 
         frame_buffer.append(detection_count)
-        pattern_found = analyze_buffer(frame_buffer)
+        # Analyze the buffer if it has at least 10 frames
+        if len(frame_buffer) >= 10:
+            pattern_found = analyze_buffer(frame_buffer)
+            update_firebase(user_id, event_id, pattern_found)
 
-        if pattern_found:
-            update_firebase(user_id, event_id, False)
-        else:
-            update_firebase(user_id, event_id, True)
             
     print("What is frame count", frame_count)
     cap.release()
@@ -594,7 +594,7 @@ def match_template_spectating_route(event_id):
     user_id = request.json.get('userId')
     if not user_id:
         return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
-    video_path = "./processed/test.mp4"
+    video_path = "./processed/test_1.mp4"
 
     # Start the background thread
     thread = threading.Thread(
