@@ -504,9 +504,8 @@ def update_firebase(user_id, event_id):
 
         # Update Firebase
         db_ref.update({
-            'isSpectating': False,
+            'isSpectating': True,
         })
-        print("Firebase updated successfully.")
     except Exception as e:
         print(f"Error updating Firebase: {e}")
 
@@ -667,7 +666,7 @@ def match_template_route():
 
 @app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
 def match_template_spectating_route(event_id):
-    user_id = request.json.get('user_id')
+    user_id = request.json.get('userId')
     if not user_id:
         return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
 
