@@ -6,6 +6,7 @@ from hsvfilter import HsvFilter
 from edgefilter import EdgeFilter
 import time
 from datetime import datetime
+from collections import deque
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -13,6 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 import requests
 import pytesseract
+import re
 import os
 import cv2
 import cv2 as cv
@@ -35,7 +37,7 @@ redirect_uri = os.getenv('STREAM_LABS_REDIRECT')
 token_url = 'https://streamlabs.com/api/v2.0/token'
 oauth_url = 'https://streamlabs.com/api/v2.0/authorize'
 database_url = os.getenv('DATABASE_URL')
-vision_kill_skull = Vision('./game_templates/warzone/interest_3.jpg')
+vision_kill_skull = Vision('./game_templates/warzone/interest_1.jpg')
 
 # Configure Chrome options
 chrome_options = Options()
@@ -52,6 +54,12 @@ conn = None
 
 # skull HSV filter
 hsv_filter = HsvFilter(0, 180, 129, 15, 229, 243, 143, 0, 67, 0)
+
+# Buffer to store the last N frames
+frame_buffer = deque(maxlen=30)  # Adjust size based on your needs
+detection_count = 0
+threshold = 10  # Number of frames where the word must be detected to confirm
+
 
 def initialize_database():
     global conn
@@ -321,7 +329,7 @@ def scrape():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def match_template_in_video(video_path, template_path, output_folder, threshold=0.95, save_as_images=True):
+def match_template_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
     # Create the output folder if it does not exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -348,10 +356,10 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
+    
     # Use the 'H264' codec for .mp4 files
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
-
+    
     if not save_as_images:
         # Initialize the video writer
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
@@ -372,31 +380,78 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         if frame_count % 30 == 0:
             print(f"Processing frame {frame_count}")
 
-        # Crop the frame to the top-right corner with height 100 pixels
+        # Crop the frame to the top-right corner with height 200 pixels
         height = 200
         width = int((height / frame.shape[0]) * frame.shape[1])
-        x_start = frame.shape[1] - width
+        x_start = max(frame.shape[1] - width, 0)  # Ensure x_start is within bounds
         y_start = 0
-        cropped_frame = frame[y_start:y_start + height, x_start:x_start + width]
+        y_end = min(y_start + height, frame.shape[0])  # Ensure y_end is within bounds
+
+        # Crop the frame
+        cropped_frame = frame[y_start:y_end, x_start:frame.shape[1] ]
+
+        # Resize the cropped frame by adding 500 to height and width
+        new_height = min(cropped_frame.shape[0] + 500, frame.shape[0])
+        new_width = min(cropped_frame.shape[1] + 500, frame.shape[1])
+
+        resized_frame = cv2.resize(cropped_frame, (new_width, new_height))
+
+        # Convert the resized frame to grayscale
+        gray_cropped_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
+
+        # Convert frame to grayscale if it is not already
+        if frame.ndim == 3:  # Color image (BGR)
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        elif frame.ndim == 4:  # Color image with alpha channel (BGRA)
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        else:  # Already grayscale
+            gray_frame = frame
+
+        # Convert template to grayscale if it is not already
+        if template.ndim == 3:  # Color image (BGR)
+            gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        elif template.ndim == 4:  # Color image with alpha channel (BGRA)
+            gray_template = cv2.cvtColor(template, cv2.COLOR_BGRA2GRAY)
+        else:  # Already grayscale
+            gray_template = template
+
+        # Ensure both images have the same data type
+        if gray_frame.dtype != gray_template.dtype:
+            gray_template = gray_template.astype(gray_frame.dtype)
+
+        # Ensure images are in the required depth (CV_8U or CV_32F)
+        if gray_frame.dtype != 'uint8' and gray_frame.dtype != 'float32':
+            gray_frame = gray_frame.astype('uint8')
+        if gray_template.dtype != 'uint8' and gray_template.dtype != 'float32':
+            gray_template = gray_template.astype('uint8')
+
+
+        detected_text = pytesseract.image_to_string(gray_frame)
+  
+        # Search for the word "SPECTATING" in the detected text (case-insensitive)
+        search_word = "SPECTATING".lower()
+        if search_word in detected_text.lower():
+            print(f"Word '{search_word.upper()}' found in the detected text.")
+        else:
+            print(f"Word '{search_word.upper()}' not found in the detected text.", detected_text)
+            
+        # Perform template matching
+        test_result = cv2.matchTemplate(gray_frame, gray_template, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(test_result)
 
         # Check if the template size is appropriate for the cropped frame
-        if (template_height > cropped_frame.shape[0]):
+        if (template_height > gray_cropped_frame.shape[0]) or (template_width > gray_cropped_frame.shape[1]):
             print("Warning: Template is larger than the cropped frame. Skipping this frame.")
             continue
 
-        # Convert the template to match the frame's type and depth
-        if len(cropped_frame.shape) == 3 and len(template.shape) == 2:  # Color frame and grayscale template
-            template = cv2.cvtColor(template, cv2.COLOR_GRAY2BGR)
-
-        # Ensure both cropped_frame and template have the same depth and type
-        if cropped_frame.dtype != template.dtype:
-            template = template.astype(cropped_frame.dtype)
-
         # Apply template matching
-        result = cv2.matchTemplate(cropped_frame, template, cv2.TM_SQDIFF_NORMED)
+        result = cv2.matchTemplate(gray_cropped_frame, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-        print("Max value:", max_val)
 
+        # Define a variable to reduce the width
+        reduced_width = int(template_width * 0.7)  # Adjust the factor as needed
+        reduced_height = int(template_height * 1.5)
+        
         # Initialize variables
         top_left = None
         bottom_right = None
@@ -404,33 +459,178 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         # Check if the best match is above the threshold
         if max_val >= threshold:
             top_left = max_loc
-            bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
-            print(frame_count, "frame here", top_left, "what is template width", bottom_right)
+            bottom_right = (top_left[0] + reduced_width, top_left[1] + reduced_height)
+            
             # Draw a rectangle around the matched region if a match was found
             if top_left is not None and bottom_right is not None:
-                cv2.rectangle(cropped_frame, top_left, bottom_right, (0, 255, 0), 2)
+                cv2.rectangle(gray_cropped_frame, top_left, bottom_right, (0, 255, 0), 2)
+
+                test_roi = cropped_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+                # Extract the region of interest (ROI) within the rectangle
+                roi = gray_cropped_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+                
+                # Crop 50 pixels off the top of the ROI
+                #if roi.shape[0] > 50:
+                #    roi = roi[50:, :]
+
+                # Use Tesseract to extract text from the image
+                numbers_string = pytesseract.image_to_string(gray_frame)
+                print(frame_count, f"Detected text:")
 
             # Save the frame if the threshold is met
             if save_as_images:
                 output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
-                cv2.imwrite(output_filename, cropped_frame)
+                cv2.imwrite(output_filename, gray_frame)
             else:
-                out.write(cropped_frame)
-
-    print(f"Processed {frame_count} frames")
-
+                out.write(gray_cropped_frame)
     # Release resources
     cap.release()
     if not save_as_images:
         out.release()
     cv2.destroyAllWindows()
 
+def match_template_spectating_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
+    # Create the output folder if it does not exist
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Generate a unique filename for the output video
+    timestamp = int(time.time())
+    output_video_path = os.path.join(output_folder, f'output_video_{timestamp}.mp4')
+
+    # Load the template image
+    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+    if template is None:
+        print("Error: Cannot load template image.")
+        return
+
+    template_height, template_width = template.shape
+
+    # Open the video file
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Error: Cannot open video file.")
+        return
+
+    # Get video properties
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # Use the 'H264' codec for .mp4 files
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
+    
+    if not save_as_images:
+        # Initialize the video writer
+        out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+        if not out.isOpened():
+            print("Error: Cannot open video writer.")
+            cap.release()
+            return
+
+    frame_count = 0
+
+    # Process the video frames
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame_count += 1
+        if frame_count % 30 == 0:
+            print(f"Processing frame {frame_count}")
+
+        # Crop the frame to the top-right corner with height 200 pixels
+        height = 200
+        width = int((height / frame.shape[0]) * frame.shape[1])
+        x_start = max(frame.shape[1] - width, 0)  # Ensure x_start is within bounds
+        y_start = 0
+        y_end = min(y_start + height, frame.shape[0])  # Ensure y_end is within bounds
+
+        # Crop the frame
+        cropped_frame = frame[y_start:y_end, x_start:frame.shape[1] ]
+
+        # Resize the cropped frame by adding 500 to height and width
+        new_height = min(cropped_frame.shape[0] + 500, frame.shape[0])
+        new_width = min(cropped_frame.shape[1] + 500, frame.shape[1])
+
+        resized_frame = cv2.resize(cropped_frame, (new_width, new_height))
+
+        # Convert the resized frame to grayscale
+        gray_cropped_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
+
+        # Convert frame to grayscale if it is not already
+        if frame.ndim == 3:  # Color image (BGR)
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        elif frame.ndim == 4:  # Color image with alpha channel (BGRA)
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        else:  # Already grayscale
+            gray_frame = frame
+
+        # Convert template to grayscale if it is not already
+        if template.ndim == 3:  # Color image (BGR)
+            gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        elif template.ndim == 4:  # Color image with alpha channel (BGRA)
+            gray_template = cv2.cvtColor(template, cv2.COLOR_BGRA2GRAY)
+        else:  # Already grayscale
+            gray_template = template
+
+        # Ensure both images have the same data type
+        if gray_frame.dtype != gray_template.dtype:
+            gray_template = gray_template.astype(gray_frame.dtype)
+
+        # Ensure images are in the required depth (CV_8U or CV_32F)
+        if gray_frame.dtype != 'uint8' and gray_frame.dtype != 'float32':
+            gray_frame = gray_frame.astype('uint8')
+        if gray_template.dtype != 'uint8' and gray_template.dtype != 'float32':
+            gray_template = gray_template.astype('uint8')
+
+
+        # Resize the image
+        height, width = gray_frame.shape
+        new_width = int(width * 2)
+        new_height = int(height * 2)
+        resized_frame = cv2.resize(gray_frame, (new_width, new_height))
+
+        # Apply thresholding
+        _, binary_frame = cv2.threshold(resized_frame, 128, 255, cv2.THRESH_BINARY)
+
+        # Apply Gaussian blur
+        blurred_frame = cv2.GaussianBlur(binary_frame, (5, 5), 0)
+
+        # Perform OCR
+        detected_text = pytesseract.image_to_string(blurred_frame)
+
+        output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+        cv2.imwrite(output_filename, blurred_frame)
+      
+        # Search for the word "SPECTATING" in the detected text (case-insensitive)
+        search_word = "SPECTATING".lower()
+        if search_word in detected_text.lower():
+            print(f"Word '{search_word.upper()}' found in the detected text.")
+        else:
+            print(f"Word '{search_word.upper()}' not found in the detected text.", detected_text)
+    # Release resources
+    cap.release()
+    if not save_as_images:
+        out.release()
+    cv2.destroyAllWindows()
+    
 @app.route('/match_template', methods=['POST'])
 def match_template_route():
     output_folder = "./test_video"
 
     # Call the match_template_in_video function
-    match_template_in_video("./processed/xressolve/xressolve.mp4", "./game_templates/warzone/interest_1.jpg", output_folder)
+    match_template_in_video("./processed/test_1.mp4", "./game_templates/warzone/spectating_1.jpg", output_folder)
+
+    return jsonify({'status': 'success', 'message': 'Processing completed.'})
+
+@app.route('/match_template_spectating', methods=['POST'])
+def match_template_spectating_route():
+    output_folder = "./test_spectating_video"
+
+    # Call the match_template_in_video function
+    match_template_spectating_in_video("./processed/test_1.mp4", "./game_templates/warzone/spectating_1.jpg", output_folder)
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
