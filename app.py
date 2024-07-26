@@ -522,54 +522,18 @@ def analyze_buffer(buffer):
     
     return pattern_detected
 
-def match_template_spectating_in_video( video_path,
-    template_path,
-    output_folder,
+def match_template_spectating_in_video(video_path,
     event_id=None,
-    user_id=None,
-    threshold=0.1,
-    save_as_images=True):
+    user_id=None):
+
     global detection_count
     global frame_buffer
     
-    # Create the output folder if it does not exist
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    # Generate a unique filename for the output video
-    timestamp = int(time.time())
-    output_video_path = os.path.join(output_folder, f'output_video_{timestamp}.mp4')
-
-    # Load the template image
-    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
-    if template is None:
-        print("Error: Cannot load template image.")
-        return
-
-    template_height, template_width = template.shape
-
     # Open the video file
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("Error: Cannot open video file.")
         return
-
-    # Get video properties
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # Use the 'H264' codec for .mp4 files
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
-    
-    if not save_as_images:
-        # Initialize the video writer
-        out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
-        if not out.isOpened():
-            print("Error: Cannot open video writer.")
-            cap.release()
-            return
-
     frame_count = 0
 
     # Process the video frames
@@ -582,88 +546,38 @@ def match_template_spectating_in_video( video_path,
         if frame_count % 24 != 0:
             continue
 
-        print(f"Processing frame {frame_count}")
-
-
-        # Crop the frame to the top-right corner with height 200 pixels
-        height = 200
-        width = int((height / frame.shape[0]) * frame.shape[1])
-        x_start = max(frame.shape[1] - width, 0)  # Ensure x_start is within bounds
-        y_start = 0
-        y_end = min(y_start + height, frame.shape[0])  # Ensure y_end is within bounds
-
-        # Crop the frame
-        cropped_frame = frame[y_start:y_end, x_start:frame.shape[1] ]
-
-        # Resize the cropped frame by adding 500 to height and width
-        new_height = min(cropped_frame.shape[0] + 500, frame.shape[0])
-        new_width = min(cropped_frame.shape[1] + 500, frame.shape[1])
-
-        resized_frame = cv2.resize(cropped_frame, (new_width, new_height))
-
-        # Convert frame to grayscale if it is not already
-        if frame.ndim == 3:  # Color image (BGR)
+        if frame.ndim == 3: 
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        elif frame.ndim == 4:  # Color image with alpha channel (BGRA)
+        elif frame.ndim == 4: 
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
-        else:  # Already grayscale
+        else:
             gray_frame = frame
 
-        # Convert template to grayscale if it is not already
-        if template.ndim == 3:  # Color image (BGR)
-            gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-        elif template.ndim == 4:  # Color image with alpha channel (BGRA)
-            gray_template = cv2.cvtColor(template, cv2.COLOR_BGRA2GRAY)
-        else:  # Already grayscale
-            gray_template = template
-
-        # Ensure both images have the same data type
-        if gray_frame.dtype != gray_template.dtype:
-            gray_template = gray_template.astype(gray_frame.dtype)
-
-        # Ensure images are in the required depth (CV_8U or CV_32F)
-        if gray_frame.dtype != 'uint8' and gray_frame.dtype != 'float32':
-            gray_frame = gray_frame.astype('uint8')
-        if gray_template.dtype != 'uint8' and gray_template.dtype != 'float32':
-            gray_template = gray_template.astype('uint8')
-
-
-        # Resize the image
         height, width = gray_frame.shape
         new_width = int(width * 2)
         new_height = int(height * 2)
         resized_frame = cv2.resize(gray_frame, (new_width, new_height))
 
-        # Apply thresholding
         _, binary_frame = cv2.threshold(resized_frame, 128, 255, cv2.THRESH_BINARY)
-
-        # Apply Gaussian blur
         blurred_frame = cv2.GaussianBlur(binary_frame, (5, 5), 0)
-
-        # Perform OCR
         detected_text = pytesseract.image_to_string(blurred_frame)
 
         # Search for the word "SPECTATING" in the detected text (case-insensitive)
-        # Check if the word is in the detected text
         if "spectating".lower() in detected_text.lower():
             detection_count += 1
         else:
-            detection_count = 0  # Reset count if word is not detected
+            detection_count = 0 
 
-        # Add the processed frame to the buffer
         frame_buffer.append(detection_count)
         pattern_found = analyze_buffer(frame_buffer)
 
-        # Check if the threshold is reached
         if pattern_found:
             update_firebase(user_id, event_id, False)
         else:
             update_firebase(user_id, event_id, True)
             
-    # Release resources
+    print("What is frame count", frame_count)
     cap.release()
-    if not save_as_images:
-        out.release()
     cv2.destroyAllWindows()
     
 @app.route('/match_template', methods=['POST'])
@@ -680,17 +594,12 @@ def match_template_spectating_route(event_id):
     user_id = request.json.get('userId')
     if not user_id:
         return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
-
-    output_folder = "./test_spectating_video"
-    video_path = "./processed/test_1.mp4"
-    template_path = "./game_templates/warzone/spectating_1.jpg"
-    threshold = 0.1
-    save_as_images = True
+    video_path = "./processed/test.mp4"
 
     # Start the background thread
     thread = threading.Thread(
         target=match_template_spectating_in_video,
-        args=(video_path, template_path, output_folder, event_id, user_id, threshold, save_as_images)
+        args=(video_path, event_id, user_id)
     )
     thread.start()
 
