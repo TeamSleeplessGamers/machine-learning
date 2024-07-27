@@ -6,8 +6,8 @@ import os
 import cv2
 import subprocess
 import logging
-import enum
 import threading
+import enum
 from warzone import match_template_spectating_in_video
 
 class TwitchResponseStatus(enum.Enum):
@@ -64,11 +64,6 @@ class TwitchRecorder:
         except subprocess.CalledProcessError as e:
             print(f"Error: {e.stderr}")
             return None
-    def process_recorded_file(self):
-        stream_url = self.get_live_stream_url(self.username)
-        match_template_spectating_in_video(stream_url, event_id=self.event_id, user_id=self.user_id)
-        # After processing, use OpenCV VideoCapture to work with the processed video file
-        #self.save_processed_frames(processed_filename) 
     def save_processed_frames(self, processed_filename):
         cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
 
@@ -161,9 +156,16 @@ class TwitchRecorder:
             elif status == TwitchResponseStatus.ONLINE:
                 logging.info("%s online, stream recording in session", self.username)
                 
-                # Start processing in a new thread
-                process_thread = threading.Thread(target=self.process_recorded_file)
-                process_thread.start()
-
+                start = time.perf_counter()
+                stream_url = self.get_live_stream_url(self.username)
+                # Run the video processing function in a separate thread
+                processing_thread = threading.Thread(
+                    target=match_template_spectating_in_video,
+                    args=(stream_url, self.event_id, self.user_id)
+                )
+                processing_thread.start()
+                finished = time.perf_counter()
+                
+                print(f'Finished in {round(finished-start, 2)} second(s)')
                 logging.info("processing and recording started, going back to checking...")
                 time.sleep(self.refresh)

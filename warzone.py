@@ -5,7 +5,9 @@ import os
 import logging
 from collections import deque
 from firebase_admin import db
-from fuzzywuzzy import fuzz, process
+from fuzzywuzzy import process
+from multiprocessing import Process, Manager, Queue
+from queue import Empty
 
 logging.basicConfig(level=logging.INFO)
 
@@ -58,68 +60,102 @@ def match_text_with_known_words(text, known_words):
             matched_words.append(word)
     return ' '.join(matched_words)
 
-def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
-    global detection_count
-    global frame_buffer
-    
-    # Open the video file
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print("Error: Cannot open video file.")
-        return
-    frame_count = 0
+def save_frame(frame, frame_count, output_folder):
+    """
+    Save the frame as an image in the specified folder.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    frame_filename = os.path.join(output_folder, f'frame_{frame_count}.png')
+    cv2.imwrite(frame_filename, frame)
 
-    # Create a directory to store processed frames
-    processed_frames_dir = f"./processed_frames/{user_id}"
-    os.makedirs(processed_frames_dir, exist_ok=True)
+def process_frame(frame, frame_count, output_folder):
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    height, width = gray_frame.shape
+    new_width = int(width * 2)
+    new_height = int(height * 2)
+    resized_frame = cv2.resize(gray_frame, (new_width, new_height))
+    frame_invert = cv2.bitwise_not(resized_frame)
+    frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
+    custom_config = r'--oem 3 --psm 6'
+    detected_text = pytesseract.image_to_string(frame_scale_abs, config=custom_config)
 
-    # Process the video frames
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        frame_count += 1
-        if frame_count % 24 != 0:
-            continue
-
-        if frame.ndim == 3: 
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        elif frame.ndim == 4: 
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
-        else:
-            gray_frame = frame
-
-        height, width = gray_frame.shape
-        new_width = int(width * 2)
-        new_height = int(height * 2)
-        resized_frame = cv2.resize(gray_frame, (new_width, new_height))
-        frame_invert = cv2.bitwise_not(resized_frame)
-        frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
-        custom_config = r'--oem 3 --psm 6'
-        detected_text = pytesseract.image_to_string(frame_scale_abs, config=custom_config)
-
-
-        # Save the processed frame
-        frame_filename = os.path.join(processed_frames_dir, f"frame_{frame_count}.jpg")
-        cv2.imwrite(frame_filename, frame)
-
-        # Search for the word "SPECTATING" in the detected text (case-insensitive)
-        if "spectating".lower() in detected_text.lower():
+    # Determine if "spectating" is found in detected text
+    detection_count = 0
+    if "spectating".lower() in detected_text.lower():
+        detection_count += 1
+    else:
+        known_words = ["SPECTATING"]
+        corrected_text = match_text_with_known_words(detected_text, known_words)
+        if corrected_text:
             detection_count += 1
-        else:
-            # Split the detected text into words
-            known_words = ["SPECTATING"]
-            corrected_text = match_text_with_known_words(detected_text, known_words)
-            if corrected_text:
-                detection_count += 1
-            detection_count = 0 
+        detection_count = 0 
 
-        frame_buffer.append(detection_count)
+    # Save the frame to the output folder
+    save_frame(frame, frame_count, output_folder)
+    print("Frame processed with detection count:", detection_count)
+    return detection_count
 
-        # Analyze the buffer if it has at least 10 frames
+
+def frame_worker(frame_queue, output_folder):
+    while True:
+        try:
+            frame, frame_count = frame_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
+            if frame is None:  # Sentinel value to exit
+                break
+            process_frame(frame, frame_count, output_folder)
+        except Empty:
+            continue
+    logging.info("Frame worker exiting")
+
+
+def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
+    if not os.path.exists("processed_frames"):
+        os.makedirs("processed_frames")
+
+    # Use multiprocessing.Manager for shared state
+    with Manager() as manager:
+        frame_buffer = manager.list()
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print("Error: Cannot open video file.")
+            return
+
+        frame_queue = Queue(maxsize=10)  # Queue to hold frames
+        num_workers = 4
+        workers = []
+        
+        # Start worker processes
+        for _ in range(num_workers):
+            p = Process(target=frame_worker, args=(frame_queue, "processed_frames"))
+            p.start()
+            workers.append(p)
+        
+        frame_count = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            frame_count += 1
+            if frame_count % 30 == 0:
+                if not frame_queue.full():
+                    frame_queue.put((frame, frame_count))
+                else:
+                    logging.warning("Frame queue is full, skipping frame")
+
+        cap.release()
+        cv2.destroyAllWindows()
+
+        # Add sentinel values to shut down workers
+        for _ in range(num_workers):
+            frame_queue.put((None, None))  # Sentinel value
+        
+        # Collect results if needed
+        for p in workers:
+            p.join()
+
+        # Analyze the buffer and update Firebase
         if len(frame_buffer) >= 10:
             pattern_found = analyze_buffer(frame_buffer)
-            update_firebase(user_id, event_id, pattern_found)    
-    cap.release()
-    cv2.destroyAllWindows()
+            update_firebase(user_id, event_id, pattern_found)
+
