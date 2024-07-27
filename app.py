@@ -267,7 +267,11 @@ def match_template_spectating_route(event_id):
 
     # Check if the user is online
     online_status = check_user_online(twitch_channel)
+    status = online_status.get('status')
     
+    if status == 'online':
+        print("Yes we onlien")
+            
     return jsonify({
         'message': 'Twitch User Online Status',
         'details': online_status
