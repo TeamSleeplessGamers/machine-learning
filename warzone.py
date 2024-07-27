@@ -50,7 +50,12 @@ def match_text_with_known_words(text, known_words):
 def process_frame(frame, event_id, user_id):
     global frame_buffer
 
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    try:
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Add your processing logic here
+    except cv2.error as e:
+        logging.error(f"Error processing frame: {e}")
+        
     height, width = gray_frame.shape
     new_width = int(width * 2)
     new_height = int(height * 2)
@@ -90,6 +95,10 @@ def frame_worker(frame_queue, event_id, user_id):
 
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     with Manager() as manager:
+        output_folder = "./output-frames"
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
+
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print("Error: Cannot open video file.")
@@ -112,6 +121,9 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
 
             frame_count += 1
             if frame_count % 300 == 0:
+                frame_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+                # Save the frame to the output folder
+                cv2.imwrite(frame_filename, frame)
                 if not frame_queue.full():
                     frame_queue.put((frame, frame_count))
                 else:
