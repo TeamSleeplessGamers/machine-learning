@@ -11,7 +11,7 @@ import os
 import cv2
 import psycopg2
 import logging
-import threading
+import requests
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -21,6 +21,10 @@ CORS(app, origins='*')  # Enable CORS for all origins
 # Initialize Firebase when the server starts
 initialize_firebase()
 database_url = os.getenv('DATABASE_URL')
+twitch_client_id = os.getenv('CLIENT_ID')
+twitch_client_secret = os.getenv('CLIENT_SECRET')
+twitch_webhook_url = os.getenv('TWITCH_WEBHOOK_URL')
+twitch_oauth_url = os.getenv('TWITCH_OAUTH_URL')
 
 # Global database connection
 conn = None
@@ -202,7 +206,28 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
     if not save_as_images:
         out.release()
     cv2.destroyAllWindows()
+  
+@app.route('/webhooks/callback', methods=['POST'])
+def webhook_callback():
+    data = request.json
+
+    # Check if it's a verification request
+    if 'challenge' in data:
+        # Respond with the challenge token
+        return data['challenge'], 200
+
+      # Access event data from the dictionary
+    event_data = data.get('event', {})
     
+    # Print the event type and broadcaster user name if available
+    event_type = event_data.get('type', 'Unknown')
+    
+    if event_type == 'live':
+        broadcaster_user_name = event_data.get('broadcaster_user_name', 'Unknown')
+        print(f"Event Type: {event_type}, Broadcaster User Name: {broadcaster_user_name}")
+
+    return jsonify({'status': 'received'}), 200
+
 @app.route('/match_template', methods=['POST'])
 def match_template_route():
     output_folder = "./test_video"
@@ -211,6 +236,61 @@ def match_template_route():
     match_template_in_video("./processed/test_1.mp4", "./game_templates/warzone/spectating_1.jpg", output_folder)
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
+
+def get_twitch_oauth_token():
+    params = {
+        'client_id': twitch_client_id,
+        'client_secret': twitch_client_secret,
+        'grant_type': 'client_credentials'
+    } 
+    response = requests.post(twitch_oauth_url, params=params)
+    response_data = response.json()
+
+    if response.status_code == 200 and 'access_token' in response_data:
+        return response_data['access_token']
+    else:
+        return None
+    
+def get_twitch_user_id(username):
+    twitch_login_user_url = f'https://api.twitch.tv/helix/users?login={username}'
+    headers = {
+        'Client-ID': twitch_client_id,    
+        'Authorization': f'Bearer {get_twitch_oauth_token()}'
+    }
+    response = requests.get(twitch_login_user_url, headers=headers)
+    response_data = response.json()
+    if response.status_code == 200 and 'data' in response_data and len(response_data['data']) > 0:
+        return response_data['data'][0]['id']
+    else:
+        return None
+
+def subscribe_to_events(user_id):
+    subscription_data = {
+            "type": "stream.online",
+            "version": "1",
+            "condition": {
+                "broadcaster_user_id": user_id
+            },
+            "transport": {
+                "method": "webhook",
+                "callback": twitch_webhook_url,
+                "secret": twitch_client_secret
+            }
+        }
+    
+
+    headers = {
+        'Client-ID': twitch_client_id,
+        'Authorization': f'Bearer {get_twitch_oauth_token()}',
+        'Content-Type': 'application/json'
+    }
+
+    responses = []
+    twitch_subscription_url = 'https://api.twitch.tv/helix/eventsub/subscriptions'
+    response = requests.post(twitch_subscription_url, headers=headers, json=subscription_data)
+    responses.append(response.json())
+
+    return responses
 
 @app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
 def match_template_spectating_route(event_id):
@@ -221,14 +301,17 @@ def match_template_spectating_route(event_id):
     twitch_channel = request.json.get('twitchProfile')
     if not twitch_channel:
         return jsonify({'status': 'error', 'message': 'Twitch Username is required.'}), 400
-    
-    try:
-        recorder = TwitchRecorder(twitch_channel, event_id, user_id)
-        threading.Thread(target=recorder.run).start()
-        return jsonify({'message': 'Recording started for user: ' + twitch_channel})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
+    # Get Twitch User ID from username
+    user_id = get_twitch_user_id(twitch_channel)
+    if not user_id:
+        return jsonify({'status': 'error', 'message': 'Twitch User ID could not be found.'}), 404
+
+    # Subscribe to Twitch events
+    subscription_responses = subscribe_to_events(user_id)
+
+    return jsonify({'message': 'Subscriptions processed', 'details': subscription_responses})
+    
 # Start the application
 if __name__ == "__main__":
     logging.basicConfig(filename="twitch-recorder.log", level=logging.INFO)
