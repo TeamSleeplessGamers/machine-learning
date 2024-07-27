@@ -216,7 +216,7 @@ def webhook_callback():
         # Respond with the challenge token
         return data['challenge'], 200
 
-      # Access event data from the dictionary
+    # Access event data from the dictionary
     event_data = data.get('event', {})
     
     # Print the event type and broadcaster user name if available
@@ -265,7 +265,9 @@ def get_twitch_user_id(username):
         return None
 
 def subscribe_to_events(user_id):
-    subscription_data = {
+    # Define the subscription data for multiple event types
+    subscriptions = [
+        {
             "type": "stream.online",
             "version": "1",
             "condition": {
@@ -276,20 +278,34 @@ def subscribe_to_events(user_id):
                 "callback": twitch_webhook_url,
                 "secret": twitch_client_secret
             }
+        },
+        {
+            "type": "stream.offline",
+            "version": "1",
+            "condition": {
+                "broadcaster_user_id": user_id
+            },
+            "transport": {
+                "method": "webhook",
+                "callback": twitch_webhook_url,
+                "secret": twitch_client_secret
+            }
         }
+    ]
     
-
     headers = {
         'Client-ID': twitch_client_id,
         'Authorization': f'Bearer {get_twitch_oauth_token()}',
         'Content-Type': 'application/json'
     }
-
+    
     responses = []
     twitch_subscription_url = 'https://api.twitch.tv/helix/eventsub/subscriptions'
-    response = requests.post(twitch_subscription_url, headers=headers, json=subscription_data)
-    responses.append(response.json())
-
+    
+    for subscription_data in subscriptions:
+        response = requests.post(twitch_subscription_url, headers=headers, json=subscription_data)
+        responses.append(response.json())
+    
     return responses
 
 @app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
