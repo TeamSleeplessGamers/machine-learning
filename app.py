@@ -3,6 +3,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from firebase import initialize_firebase
 import time
+from twitch_recorder import TwitchRecorder
 from collections import deque
 import pytesseract
 import os
@@ -270,7 +271,9 @@ def match_template_spectating_route(event_id):
     status = online_status.get('status')
     
     if status == 'online':
-        print("Yes we onlien")
+        logging.info(f"Starting Process Recoding for {twitch_channel}")
+        recorder = TwitchRecorder(twitch_channel)
+        recorder.process_warzone_video_stream_info()
             
     return jsonify({
         'message': 'Twitch User Online Status',
