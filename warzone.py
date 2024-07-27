@@ -3,72 +3,58 @@ import pytesseract
 import time
 import os
 import logging
-from collections import deque
-from firebase_admin import db
 from fuzzywuzzy import process
+from firebase import initialize_firebase
+from firebase_admin import db
+from collections import deque
 from multiprocessing import Process, Manager, Queue
 from queue import Empty
 
 logging.basicConfig(level=logging.INFO)
 
-# Define global variables if needed
-detection_count = 0
+# Initialize Firebase
+initialize_firebase()
+
+# Global frame buffer
 frame_buffer = deque(maxlen=30)
 
-def analyze_buffer(buffer, threshold=10):
-    """
-    Analyze the buffer to determine if a pattern is detected.
-    """
-    # Ensure we only check when the buffer is filled to its maxlen
-    if len(buffer) == buffer.maxlen:
-        non_zero_count = sum(1 for value in buffer if value > 0)
-        # If the count of values greater than 0 is greater than or equal to the threshold, return True
-        if non_zero_count >= threshold:
-            return True
-    # Return False if the condition is not met
-    return False
-    
+def analyze_buffer(buffer, threshold=5):
+    non_zero_count = sum(1 for value in buffer if value > 0)
+    return non_zero_count >= threshold
+
 def update_firebase(user_id, event_id, is_spectating, max_retries=3):
     path = f'event-{event_id}/{user_id}'
     db_ref = db.reference(path)
     
     for attempt in range(max_retries):
         try:
-            # Update Firebase
-            db_ref.update({
-                'isSpectating': is_spectating,
-            })
+            db_ref.update({'isSpectating': is_spectating})
             break
         except Exception as e:
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
-            time.sleep(2)  # Wait before retrying
+            time.sleep(2)
 
 def match_text_with_known_words(text, known_words):
-    """
-    Find the closest match for the given text from a list of known words using fuzzy matching.
-    """
     matched_words = []
     words = text.split()
     
     for word in words:
-        # Skip words that are too short or non-alphanumeric
         if not word.isalnum() or len(word) < 3:
             continue
         
         closest_match, score = process.extractOne(word, known_words)
-        if score >= 70:  # Adjust the threshold as needed
+        if score >= 70:
             matched_words.append(word)
     return ' '.join(matched_words)
 
 def save_frame(frame, frame_count, output_folder):
-    """
-    Save the frame as an image in the specified folder.
-    """
     os.makedirs(output_folder, exist_ok=True)
     frame_filename = os.path.join(output_folder, f'frame_{frame_count}.png')
     cv2.imwrite(frame_filename, frame)
 
-def process_frame(frame, frame_count, output_folder):
+def process_frame(frame, frame_count, output_folder, event_id, user_id):
+    global frame_buffer
+
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     height, width = gray_frame.shape
     new_width = int(width * 2)
@@ -79,7 +65,6 @@ def process_frame(frame, frame_count, output_folder):
     custom_config = r'--oem 3 --psm 6'
     detected_text = pytesseract.image_to_string(frame_scale_abs, config=custom_config)
 
-    # Determine if "spectating" is found in detected text
     detection_count = 0
     if "spectating".lower() in detected_text.lower():
         detection_count += 1
@@ -89,44 +74,43 @@ def process_frame(frame, frame_count, output_folder):
         if corrected_text:
             detection_count += 1
         detection_count = 0 
+    frame_buffer.append(detection_count)
 
-    # Save the frame to the output folder
     save_frame(frame, frame_count, output_folder)
-    print("Frame processed with detection count:", detection_count)
+
+    if len(frame_buffer) >= 10:
+        pattern_found = analyze_buffer(frame_buffer)
+        update_firebase(user_id, event_id, pattern_found)
+
     return detection_count
 
-
-def frame_worker(frame_queue, output_folder):
+def frame_worker(frame_queue, output_folder, event_id, user_id):
     while True:
         try:
-            frame, frame_count = frame_queue.get(timeout=5)  # Timeout to prevent indefinite blocking
-            if frame is None:  # Sentinel value to exit
+            frame, frame_count = frame_queue.get(timeout=5)
+            if frame is None:
                 break
-            process_frame(frame, frame_count, output_folder)
+            process_frame(frame, frame_count, output_folder, event_id, user_id)
         except Empty:
             continue
     logging.info("Frame worker exiting")
-
 
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     if not os.path.exists("processed_frames"):
         os.makedirs("processed_frames")
 
-    # Use multiprocessing.Manager for shared state
     with Manager() as manager:
-        frame_buffer = manager.list()
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print("Error: Cannot open video file.")
             return
 
-        frame_queue = Queue(maxsize=10)  # Queue to hold frames
+        frame_queue = Queue(maxsize=10)
         num_workers = 4
         workers = []
         
-        # Start worker processes
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, "processed_frames"))
+            p = Process(target=frame_worker, args=(frame_queue, "processed_frames", event_id, user_id))
             p.start()
             workers.append(p)
         
@@ -146,16 +130,8 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         cap.release()
         cv2.destroyAllWindows()
 
-        # Add sentinel values to shut down workers
         for _ in range(num_workers):
-            frame_queue.put((None, None))  # Sentinel value
+            frame_queue.put((None, None))  # Sentinel values to stop workers
         
-        # Collect results if needed
         for p in workers:
             p.join()
-
-        # Analyze the buffer and update Firebase
-        if len(frame_buffer) >= 10:
-            pattern_found = analyze_buffer(frame_buffer)
-            update_firebase(user_id, event_id, pattern_found)
-
