@@ -1,9 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from hsvfilter import HsvFilter
 from firebase import initialize_firebase
-from twitchrecorder import TwitchRecorder
 import time
 from collections import deque
 import pytesseract
@@ -207,27 +205,6 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         out.release()
     cv2.destroyAllWindows()
   
-@app.route('/webhooks/callback', methods=['POST'])
-def webhook_callback():
-    data = request.json
-
-    # Check if it's a verification request
-    if 'challenge' in data:
-        # Respond with the challenge token
-        return data['challenge'], 200
-
-    # Access event data from the dictionary
-    event_data = data.get('event', {})
-    
-    # Print the event type and broadcaster user name if available
-    event_type = event_data.get('type', 'Unknown')
-    
-    if event_type == 'live':
-        broadcaster_user_name = event_data.get('broadcaster_user_name', 'Unknown')
-        print(f"Event Type: {event_type}, Broadcaster User Name: {broadcaster_user_name}")
-
-    return jsonify({'status': 'received'}), 200
-
 @app.route('/match_template', methods=['POST'])
 def match_template_route():
     output_folder = "./test_video"
@@ -250,63 +227,6 @@ def get_twitch_oauth_token():
         return response_data['access_token']
     else:
         return None
-    
-def get_twitch_user_id(username):
-    twitch_login_user_url = f'https://api.twitch.tv/helix/users?login={username}'
-    headers = {
-        'Client-ID': twitch_client_id,    
-        'Authorization': f'Bearer {get_twitch_oauth_token()}'
-    }
-    response = requests.get(twitch_login_user_url, headers=headers)
-    response_data = response.json()
-    if response.status_code == 200 and 'data' in response_data and len(response_data['data']) > 0:
-        return response_data['data'][0]['id']
-    else:
-        return None
-
-def subscribe_to_events(user_id):
-    # Define the subscription data for multiple event types
-    subscriptions = [
-        {
-            "type": "stream.online",
-            "version": "1",
-            "condition": {
-                "broadcaster_user_id": user_id
-            },
-            "transport": {
-                "method": "webhook",
-                "callback": twitch_webhook_url,
-                "secret": twitch_client_secret
-            }
-        },
-        {
-            "type": "stream.offline",
-            "version": "1",
-            "condition": {
-                "broadcaster_user_id": user_id
-            },
-            "transport": {
-                "method": "webhook",
-                "callback": twitch_webhook_url,
-                "secret": twitch_client_secret
-            }
-        }
-    ]
-    
-    headers = {
-        'Client-ID': twitch_client_id,
-        'Authorization': f'Bearer {get_twitch_oauth_token()}',
-        'Content-Type': 'application/json'
-    }
-    
-    responses = []
-    twitch_subscription_url = 'https://api.twitch.tv/helix/eventsub/subscriptions'
-    
-    for subscription_data in subscriptions:
-        response = requests.post(twitch_subscription_url, headers=headers, json=subscription_data)
-        responses.append(response.json())
-    
-    return responses
 
 def check_user_online(user_login):
     headers = {
