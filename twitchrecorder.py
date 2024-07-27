@@ -46,7 +46,6 @@ class TwitchRecorder:
         token_response.raise_for_status()
         token = token_response.json()
         return token["access_token"]
-
     def run(self):
         if self.refresh < 15:
             logging.warning("check interval should not be lower than 15 seconds")
@@ -55,11 +54,6 @@ class TwitchRecorder:
         logging.info("checking for %s every %s seconds, recording with %s quality",
                      self.username, self.refresh, self.quality)
         self.loop_check()
-    def record_stream(self, recorded_filename):
-        subprocess.call(
-            ["streamlink", "--twitch-disable-ads", "twitch.tv/" + self.username, self.quality,
-             "-o", recorded_filename])
-
     def get_live_stream_url(self, twitch_profile):
         try:
             result = subprocess.run(
@@ -72,19 +66,9 @@ class TwitchRecorder:
             return None
     def process_recorded_file(self):
         stream_url = self.get_live_stream_url(self.username)
-        self.processed_match_template_spectating(stream_url)
+        match_template_spectating_in_video(stream_url, event_id=self.event_id, user_id=self.user_id)
         # After processing, use OpenCV VideoCapture to work with the processed video file
-        #self.save_processed_frames(processed_filename)
-    def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
-        try:
-            subprocess.call(
-                [self.ffmpeg_path, "-err_detect", "ignore_err", "-i", recorded_filename, "-c", "copy",
-                 processed_filename])
-            os.remove(recorded_filename)
-        except Exception as e:
-            logging.error(e)
-    def processed_match_template_spectating(self, processed_filename):
-            match_template_spectating_in_video(processed_filename, event_id=self.event_id, user_id=self.user_id)
+        #self.save_processed_frames(processed_filename) 
     def save_processed_frames(self, processed_filename):
         cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
 
@@ -139,8 +123,6 @@ class TwitchRecorder:
 
         cap.release()
         cv2.destroyAllWindows()
-
-
     def check_user(self):
         info = None
         status = TwitchResponseStatus.ERROR
@@ -160,7 +142,6 @@ class TwitchRecorder:
                 if e.response.status_code == 404:
                     status = TwitchResponseStatus.NOT_FOUND
         return status, info
-
     def loop_check(self):
         while True:
             status, info = self.check_user()
