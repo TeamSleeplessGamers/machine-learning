@@ -75,11 +75,9 @@ def process_frame(frame, event_id, user_id):
             detection_count += 1
         detection_count = 0 
     frame_buffer.append(detection_count)
-
-    if len(frame_buffer) >= 10:
-        pattern_found = analyze_buffer(frame_buffer)
-        update_firebase(user_id, event_id, pattern_found)
-
+    
+    pattern_found = analyze_buffer(frame_buffer)
+    update_firebase(user_id, event_id, pattern_found)
     return detection_count
 
 def frame_worker(frame_queue, event_id, user_id):
