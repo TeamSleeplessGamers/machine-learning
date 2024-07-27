@@ -85,7 +85,7 @@ def process_frame(frame, event_id, user_id):
 def frame_worker(frame_queue, event_id, user_id):
     while True:
         try:
-            frame = frame_queue.get(timeout=5)
+            frame, frame_count = frame_queue.get(timeout=5)
             if frame is None:
                 break
             process_frame(frame, event_id, user_id)
