@@ -308,6 +308,33 @@ def subscribe_to_events(user_id):
     
     return responses
 
+def check_user_online(user_login):
+    headers = {
+        'Client-ID': twitch_client_id,    
+        'Authorization': f'Bearer {get_twitch_oauth_token()}'
+    }
+    
+    # Define the Twitch API URL to check if the user is online
+    stream_info_url = f'https://api.twitch.tv/helix/streams?user_login={user_login}'
+    
+    # Make the request to Twitch API
+    response = requests.get(stream_info_url, headers=headers)
+    stream_data = response.json()
+    
+    # Check if the user is online
+    if 'data' in stream_data and len(stream_data['data']) > 0:
+        stream_info = stream_data['data'][0]
+        return {
+            'status': 'online',
+            'stream_info': {
+                'title': stream_info['title'],
+                'game_name': stream_info['game_name'],
+                'viewer_count': stream_info['viewer_count']
+            }
+        }
+    else:
+        return {'status': 'offline'}
+    
 @app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
 def match_template_spectating_route(event_id):
     user_id = request.json.get('userId')
@@ -318,15 +345,13 @@ def match_template_spectating_route(event_id):
     if not twitch_channel:
         return jsonify({'status': 'error', 'message': 'Twitch Username is required.'}), 400
 
-    # Get Twitch User ID from username
-    user_id = get_twitch_user_id(twitch_channel)
-    if not user_id:
-        return jsonify({'status': 'error', 'message': 'Twitch User ID could not be found.'}), 404
-
-    # Subscribe to Twitch events
-    subscription_responses = subscribe_to_events(user_id)
-
-    return jsonify({'message': 'Subscriptions processed', 'details': subscription_responses})
+    # Check if the user is online
+    online_status = check_user_online(twitch_channel)
+    
+    return jsonify({
+        'message': 'Twitch User Online Status',
+        'details': online_status
+    })
     
 # Start the application
 if __name__ == "__main__":
