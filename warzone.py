@@ -47,12 +47,7 @@ def match_text_with_known_words(text, known_words):
             matched_words.append(word)
     return ' '.join(matched_words)
 
-def save_frame(frame, frame_count, output_folder):
-    os.makedirs(output_folder, exist_ok=True)
-    frame_filename = os.path.join(output_folder, f'frame_{frame_count}.png')
-    cv2.imwrite(frame_filename, frame)
-
-def process_frame(frame, frame_count, output_folder, event_id, user_id):
+def process_frame(frame, frame_count, event_id, user_id):
     global frame_buffer
 
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -76,29 +71,24 @@ def process_frame(frame, frame_count, output_folder, event_id, user_id):
         detection_count = 0 
     frame_buffer.append(detection_count)
 
-    save_frame(frame, frame_count, output_folder)
-
     if len(frame_buffer) >= 10:
         pattern_found = analyze_buffer(frame_buffer)
         update_firebase(user_id, event_id, pattern_found)
 
     return detection_count
 
-def frame_worker(frame_queue, output_folder, event_id, user_id):
+def frame_worker(frame_queue, event_id, user_id):
     while True:
         try:
             frame, frame_count = frame_queue.get(timeout=5)
             if frame is None:
                 break
-            process_frame(frame, frame_count, output_folder, event_id, user_id)
+            process_frame(frame, frame_count, event_id, user_id)
         except Empty:
             continue
     logging.info("Frame worker exiting")
 
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
-    if not os.path.exists("processed_frames"):
-        os.makedirs("processed_frames")
-
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -110,7 +100,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         workers = []
         
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, "processed_frames", event_id, user_id))
+            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id))
             p.start()
             workers.append(p)
         
@@ -121,7 +111,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
                 break
 
             frame_count += 1
-            if frame_count % 30 == 0:
+            if frame_count % 300 == 0:
                 if not frame_queue.full():
                     frame_queue.put((frame, frame_count))
                 else:
