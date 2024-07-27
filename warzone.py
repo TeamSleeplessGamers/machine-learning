@@ -47,7 +47,7 @@ def match_text_with_known_words(text, known_words):
             matched_words.append(word)
     return ' '.join(matched_words)
 
-def process_frame(frame, frame_count, event_id, user_id):
+def process_frame(frame, event_id, user_id):
     global frame_buffer
 
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -80,10 +80,10 @@ def process_frame(frame, frame_count, event_id, user_id):
 def frame_worker(frame_queue, event_id, user_id):
     while True:
         try:
-            frame, frame_count = frame_queue.get(timeout=5)
+            frame = frame_queue.get(timeout=5)
             if frame is None:
                 break
-            process_frame(frame, frame_count, event_id, user_id)
+            process_frame(frame, event_id, user_id)
         except Empty:
             continue
     logging.info("Frame worker exiting")
