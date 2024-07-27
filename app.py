@@ -272,7 +272,7 @@ def match_template_spectating_route(event_id):
     
     if status == 'online':
         logging.info(f"Starting Process Recoding for {twitch_channel}")
-        recorder = TwitchRecorder(twitch_channel)
+        recorder = TwitchRecorder(twitch_channel, event_id, user_id)
         recorder.process_warzone_video_stream_info()
             
     return jsonify({
