@@ -17,7 +17,6 @@ load_dotenv()  # Load environment variables from .env file
 
 app = Flask(__name__)
 CORS(app, origins='*')  # Enable CORS for all origins
-app.secret_key = os.urandom(24)
 
 # Initialize Firebase when the server starts
 initialize_firebase()
@@ -26,14 +25,7 @@ database_url = os.getenv('DATABASE_URL')
 # Global database connection
 conn = None
 
-# skull HSV filter
-hsv_filter = HsvFilter(0, 180, 129, 15, 229, 243, 143, 0, 67, 0)
-
-# Buffer to store the last N frames
-frame_buffer = deque(maxlen=30)  # Adjust size based on your needs
-detection_count = 0
 threshold = 10  # Number of frames where the word must be detected to confirm
-
 
 def initialize_database():
     global conn
@@ -50,20 +42,6 @@ def index():
     return '''
         <h1>Welcome to Sleepless Gamers Integration</h1>
     '''
-
-@app.route('/start_recording', methods=['POST'])
-def start_recording():
-    data = request.json
-    username = data.get('username')
-    if not username:
-        return jsonify({'error': 'Username is required'}), 400
-
-    try:
-        recorder = TwitchRecorder(username)
-        threading.Thread(target=recorder.run).start()
-        return jsonify({'message': 'Recording started for user: ' + username})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 def match_template_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
     # Create the output folder if it does not exist
@@ -251,15 +229,6 @@ def match_template_spectating_route(event_id):
         return jsonify({'message': 'Recording started for user: ' + twitch_channel})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/shutdown', methods=['POST'])
-def shutdown():
-    shutdown_func = request.environ.get('werkzeug.server.shutdown')
-    if shutdown_func is None:
-        raise RuntimeError('Not running with the Werkzeug Server')
-    shutdown_func()
-    return 'Server shutting down...'
 
 # Start the application
 if __name__ == "__main__":
