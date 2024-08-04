@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 from firebase import initialize_firebase
@@ -10,6 +10,7 @@ import os
 import cv2
 import psycopg2
 import logging
+from heatmap_generator import generate_heatmap
 import requests
 
 load_dotenv()  # Load environment variables from .env file
@@ -280,6 +281,30 @@ def match_template_spectating_route(event_id):
         'details': online_status
     })
     
+@app.route('/heatmap', methods=['GET'])
+def generate_and_serve_heatmap():
+    # Dummy data for demonstration purposes
+    data = {
+        'username': ['user1', 'user2', 'user3', 'user4', 'user5'],
+        'time_0': [5, 1, 8, 0, 6],
+        'time_1': [2, 6, 3, 1, 7],
+        'time_2': [7, 2, 6, 8, 0],
+        'time_3': [3, 5, 9, 2, 1],
+        'time_4': [6, 0, 4, 3, 2]
+    }
+    
+    # Path for the heatmap image
+    heatmap_path = 'heatmap.png'
+    
+    # Generate the heatmap
+    generate_heatmap(data, heatmap_path)
+    
+    # Check if the heatmap file was created
+    if os.path.exists(heatmap_path):
+        return send_file(heatmap_path, mimetype='image/png')
+    else:
+        return jsonify({'message': 'Failed to generate heatmap'}), 500
+
 # Start the application
 if __name__ == "__main__":
     logging.basicConfig(filename="twitch-recorder.log", level=logging.INFO)
