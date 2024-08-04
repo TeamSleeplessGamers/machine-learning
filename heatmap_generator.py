@@ -7,10 +7,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 def generate_heatmap(df, heatmap_path):
-    # Pivot the data to create a matrix for the heatmap
     pivot_table = df.pivot_table(index='day', columns='time', aggfunc='size', fill_value=0)
     
-    # Generate the heatmap
     plt.figure(figsize=(12, 8))
     sns.heatmap(pivot_table, annot=True, fmt='d', cmap='YlGnBu', linewidths=0.5)
     plt.title('Heatmap of Streamer Activity')

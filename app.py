@@ -14,12 +14,11 @@ import logging
 from heatmap_generator import generate_heatmap
 import requests
 
-load_dotenv()  # Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app, origins='*')  # Enable CORS for all origins
+CORS(app, origins='*')
 
-# Initialize Firebase when the server starts
 initialize_firebase()
 database_url = os.getenv('DATABASE_URL')
 twitch_client_id = os.getenv('CLIENT_ID')
@@ -27,10 +26,9 @@ twitch_client_secret = os.getenv('CLIENT_SECRET')
 twitch_webhook_url = os.getenv('TWITCH_WEBHOOK_URL')
 twitch_oauth_url = os.getenv('TWITCH_OAUTH_URL')
 
-# Global database connection
 conn = None
 
-threshold = 10  # Number of frames where the word must be detected to confirm
+threshold = 10 
 
 def initialize_database():
     global conn
@@ -49,15 +47,12 @@ def index():
     '''
 
 def match_template_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
-    # Create the output folder if it does not exist
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
-    # Generate a unique filename for the output video
     timestamp = int(time.time())
     output_video_path = os.path.join(output_folder, f'output_video_{timestamp}.mp4')
 
-    # Load the template image
     template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
     if template is None:
         print("Error: Cannot load template image.")
@@ -65,22 +60,18 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
 
     template_height, template_width = template.shape
 
-    # Open the video file
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("Error: Cannot open video file.")
         return
 
-    # Get video properties
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    # Use the 'H264' codec for .mp4 files
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
     
     if not save_as_images:
-        # Initialize the video writer
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
         if not out.isOpened():
             print("Error: Cannot open video writer.")
@@ -89,7 +80,6 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
 
     frame_count = 0
 
-    # Process the video frames
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -99,39 +89,33 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         if frame_count % 30 == 0:
             print(f"Processing frame {frame_count}")
 
-        # Crop the frame to the top-right corner with height 200 pixels
         height = 200
         width = int((height / frame.shape[0]) * frame.shape[1])
-        x_start = max(frame.shape[1] - width, 0)  # Ensure x_start is within bounds
+        x_start = max(frame.shape[1] - width, 0) 
         y_start = 0
-        y_end = min(y_start + height, frame.shape[0])  # Ensure y_end is within bounds
+        y_end = min(y_start + height, frame.shape[0])
 
-        # Crop the frame
         cropped_frame = frame[y_start:y_end, x_start:frame.shape[1] ]
 
-        # Resize the cropped frame by adding 500 to height and width
         new_height = min(cropped_frame.shape[0] + 500, frame.shape[0])
         new_width = min(cropped_frame.shape[1] + 500, frame.shape[1])
 
         resized_frame = cv2.resize(cropped_frame, (new_width, new_height))
 
-        # Convert the resized frame to grayscale
         gray_cropped_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
 
-        # Convert frame to grayscale if it is not already
-        if frame.ndim == 3:  # Color image (BGR)
+        if frame.ndim == 3: 
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        elif frame.ndim == 4:  # Color image with alpha channel (BGRA)
+        elif frame.ndim == 4:
             gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
-        else:  # Already grayscale
+        else:
             gray_frame = frame
 
-        # Convert template to grayscale if it is not already
-        if template.ndim == 3:  # Color image (BGR)
+        if template.ndim == 3:
             gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-        elif template.ndim == 4:  # Color image with alpha channel (BGRA)
+        elif template.ndim == 4:
             gray_template = cv2.cvtColor(template, cv2.COLOR_BGRA2GRAY)
-        else:  # Already grayscale
+        else:
             gray_template = template
 
         # Ensure both images have the same data type
@@ -154,28 +138,22 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         else:
             print(f"Word '{search_word.upper()}' not found in the detected text.", detected_text)
             
-        # Perform template matching
         test_result = cv2.matchTemplate(gray_frame, gray_template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(test_result)
 
-        # Check if the template size is appropriate for the cropped frame
         if (template_height > gray_cropped_frame.shape[0]) or (template_width > gray_cropped_frame.shape[1]):
             print("Warning: Template is larger than the cropped frame. Skipping this frame.")
             continue
 
-        # Apply template matching
         result = cv2.matchTemplate(gray_cropped_frame, template, cv2.TM_CCOEFF_NORMED)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
 
-        # Define a variable to reduce the width
-        reduced_width = int(template_width * 0.7)  # Adjust the factor as needed
+        reduced_width = int(template_width * 0.7)
         reduced_height = int(template_height * 1.5)
         
-        # Initialize variables
         top_left = None
         bottom_right = None
 
-        # Check if the best match is above the threshold
         if max_val >= threshold:
             top_left = max_loc
             bottom_right = (top_left[0] + reduced_width, top_left[1] + reduced_height)
@@ -192,17 +170,12 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
                 #if roi.shape[0] > 50:
                 #    roi = roi[50:, :]
 
-                # Use Tesseract to extract text from the image
-                numbers_string = pytesseract.image_to_string(gray_frame)
                 print(frame_count, f"Detected text:")
-
-            # Save the frame if the threshold is met
             if save_as_images:
                 output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
                 cv2.imwrite(output_filename, gray_frame)
             else:
                 out.write(gray_cropped_frame)
-    # Release resources
     cap.release()
     if not save_as_images:
         out.release()
@@ -212,7 +185,6 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
 def match_template_route():
     output_folder = "./test_video"
 
-    # Call the match_template_in_video function
     match_template_in_video("./processed/test_1.mp4", "./game_templates/warzone/spectating_1.jpg", output_folder)
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
@@ -237,14 +209,11 @@ def check_user_online(user_login):
         'Authorization': f'Bearer {get_twitch_oauth_token()}'
     }
     
-    # Define the Twitch API URL to check if the user is online
     stream_info_url = f'https://api.twitch.tv/helix/streams?user_login={user_login}'
     
-    # Make the request to Twitch API
     response = requests.get(stream_info_url, headers=headers)
     stream_data = response.json()
     
-    # Check if the user is online
     if 'data' in stream_data and len(stream_data['data']) > 0:
         stream_info = stream_data['data'][0]
         return {
@@ -268,7 +237,6 @@ def match_template_spectating_route(event_id):
     if not twitch_channel:
         return jsonify({'status': 'error', 'message': 'Twitch Username is required.'}), 400
 
-    # Check if the user is online
     online_status = check_user_online(twitch_channel)
     status = online_status.get('status')
     
@@ -284,23 +252,16 @@ def match_template_spectating_route(event_id):
     
 @app.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
-    # Path to the CSV file
     csv_path = 'warzone-streamer.csv'
-    
-    # Path for the heatmap image
     heatmap_path = 'heatmap.png'
     
-    # Check if the CSV file exists
     if not os.path.exists(csv_path):
         return jsonify({'message': 'CSV file not found'}), 404
     
-    # Read the CSV file into a DataFrame
     df = pd.read_csv(csv_path)
     
-    # Generate the heatmap
     generate_heatmap(df, heatmap_path)
     
-    # Check if the heatmap file was created
     if os.path.exists(heatmap_path):
         return send_file(heatmap_path, mimetype='image/png')
     else:
