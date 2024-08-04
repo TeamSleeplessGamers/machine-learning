@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
+import pandas as pd
 from firebase import initialize_firebase
 import time
 from twitch_recorder import TwitchRecorder
@@ -283,21 +284,21 @@ def match_template_spectating_route(event_id):
     
 @app.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
-    # Dummy data for demonstration purposes
-    data = {
-        'username': ['user1', 'user2', 'user3', 'user4', 'user5'],
-        'time_0': [5, 1, 8, 0, 6],
-        'time_1': [2, 6, 3, 1, 7],
-        'time_2': [7, 2, 6, 8, 0],
-        'time_3': [3, 5, 9, 2, 1],
-        'time_4': [6, 0, 4, 3, 2]
-    }
+    # Path to the CSV file
+    csv_path = 'warzone-streamer.csv'
     
     # Path for the heatmap image
     heatmap_path = 'heatmap.png'
     
+    # Check if the CSV file exists
+    if not os.path.exists(csv_path):
+        return jsonify({'message': 'CSV file not found'}), 404
+    
+    # Read the CSV file into a DataFrame
+    df = pd.read_csv(csv_path)
+    
     # Generate the heatmap
-    generate_heatmap(data, heatmap_path)
+    generate_heatmap(df, heatmap_path)
     
     # Check if the heatmap file was created
     if os.path.exists(heatmap_path):
