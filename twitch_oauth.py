@@ -6,7 +6,6 @@ twitch_client_secret = os.getenv('CLIENT_SECRET')
 twitch_webhook_url = os.getenv('TWITCH_WEBHOOK_URL')
 twitch_oauth_url = os.getenv('TWITCH_OAUTH_URL')
 
-
 def get_twitch_oauth_token():
     params = {
         'client_id': twitch_client_id,

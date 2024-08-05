@@ -14,6 +14,8 @@ import hmac
 import logging
 from heatmap_generator import generate_heatmap
 import requests
+import csv
+from datetime import datetime
 from database import Database
 
 load_dotenv()
@@ -203,7 +205,18 @@ def check_user_online(user_login):
         }
     else:
         return {'status': 'offline'}
-    
+  
+def get_day_and_time():
+    now = datetime.now()
+    day_of_week = now.strftime("%A")
+    current_hour = now.hour
+    return day_of_week, current_hour
+
+def append_to_csv(display_name, day, time):
+    with open('warzone-streamer.csv', mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([display_name, day, time])
+  
 @app.route('/webhooks/callback', methods=['POST'])
 def webhook_callback():
     headers = request.headers
@@ -225,7 +238,26 @@ def webhook_callback():
             return 'Signature verification failed', 403
         else:
             broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
-            print("Signatures match", broadcaster_id)   
+            
+            if len(broadcaster_id) > 0:
+                api_endpoint = f"https://api.twitch.tv/helix/users?id={broadcaster_id}"
+                headers = {
+                    'Authorization': f'Bearer {get_twitch_oauth_token()}',
+                    'Client-Id': twitch_client_id
+                }
+                try:
+                    response = requests.get(api_endpoint, headers=headers) 
+                    response.raise_for_status()         
+                    response_data = response.json()
+                    display_name = response_data['data'][0]['display_name']
+                    
+                    if len(display_name) > 0:
+                        day_of_week, current_time = get_day_and_time()
+                        append_to_csv(display_name, day_of_week, current_time)
+                except requests.exceptions.HTTPError as http_err:
+                    print(f"HTTP error occurred: {http_err}")
+                except Exception as err:
+                    print(f"Other error occurred: {err}")
     return '', 204
 
 @app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
