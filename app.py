@@ -224,7 +224,7 @@ def webhook_callback():
     
     signature = headers.get('Twitch-Eventsub-Message-Signature')
     timestamp = headers.get('Twitch-Eventsub-Message-Timestamp')
-    eventType = headers.get('Twitch-Eventsub-Message-Type')
+    event_type = headers.get('Twitch-Eventsub-Message-Type')
 
     if signature and timestamp:
         message = headers.get('Twitch-Eventsub-Message-Id') + timestamp + body
@@ -237,7 +237,7 @@ def webhook_callback():
         if not hmac.compare_digest(expected_signature, signature):
             print("Signature verification failed")
             return 'Signature verification failed', 403
-        if eventType == "notification":
+        if event_type == "notification":
             broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
             stream_online = request.json['subscription']['type']
             if len(broadcaster_id) > 0 and stream_online == "stream.online":
