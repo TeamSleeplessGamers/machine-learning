@@ -5,7 +5,7 @@ import pandas as pd
 from firebase import initialize_firebase
 import time
 from twitch_recorder import TwitchRecorder
-from collections import deque
+from twitch_oauth import get_twitch_oauth_token
 import pytesseract
 import os
 import cv2
@@ -13,6 +13,7 @@ import psycopg2
 import logging
 from heatmap_generator import generate_heatmap
 import requests
+from database import Database
 
 load_dotenv()
 
@@ -20,13 +21,10 @@ app = Flask(__name__)
 CORS(app, origins='*')
 
 initialize_firebase()
-database_url = os.getenv('DATABASE_URL')
-twitch_client_id = os.getenv('CLIENT_ID')
-twitch_client_secret = os.getenv('CLIENT_SECRET')
-twitch_webhook_url = os.getenv('TWITCH_WEBHOOK_URL')
-twitch_oauth_url = os.getenv('TWITCH_OAUTH_URL')
+database = Database()  # Initialize the database
+conn = database.get_connection()
 
-conn = None
+twitch_client_id = os.getenv('CLIENT_ID')
 
 threshold = 10 
 
@@ -189,20 +187,6 @@ def match_template_route():
 
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
-def get_twitch_oauth_token():
-    params = {
-        'client_id': twitch_client_id,
-        'client_secret': twitch_client_secret,
-        'grant_type': 'client_credentials'
-    } 
-    response = requests.post(twitch_oauth_url, params=params)
-    response_data = response.json()
-
-    if response.status_code == 200 and 'access_token' in response_data:
-        return response_data['access_token']
-    else:
-        return None
-
 def check_user_online(user_login):
     headers = {
         'Client-ID': twitch_client_id,    
@@ -244,10 +228,14 @@ def match_template_spectating_route(event_id):
         logging.info(f"Starting Process Recoding for {twitch_channel}")
         recorder = TwitchRecorder(twitch_channel, event_id, user_id)
         recorder.process_warzone_video_stream_info()
-            
+    else:
+        return jsonify({
+            'message': 'Twitch User Must Not Be Online?',
+            'details': status
+        })              
     return jsonify({
         'message': 'Twitch User Online Status',
-        'details': online_status
+        'details': status
     })
     
 @app.route('/heatmap', methods=['GET'])
@@ -274,5 +262,4 @@ if __name__ == "__main__":
     try:
         app.run(debug=True, host='0.0.0.0', port=8000)
     finally:
-        if conn:
-            conn.close()
+        database.close_connection()
