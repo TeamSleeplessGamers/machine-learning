@@ -9,7 +9,8 @@ from twitch_oauth import get_twitch_oauth_token
 import pytesseract
 import os
 import cv2
-import psycopg2
+import hashlib
+import hmac
 import logging
 from heatmap_generator import generate_heatmap
 import requests
@@ -25,17 +26,9 @@ database = Database()  # Initialize the database
 conn = database.get_connection()
 
 twitch_client_id = os.getenv('CLIENT_ID')
+twitch_client_secret = os.getenv('CLIENT_SECRET')
 
 threshold = 10 
-
-def initialize_database():
-    global conn
-    try:
-        conn = psycopg2.connect(database_url)
-        print("Database connection established successfully.")
-    except Exception as e:
-        print(f"Error connecting to the database: {e}")
-        conn = None
 
 # Routes
 @app.route('/')
@@ -211,6 +204,30 @@ def check_user_online(user_login):
     else:
         return {'status': 'offline'}
     
+@app.route('/webhooks/callback', methods=['POST'])
+def webhook_callback():
+    headers = request.headers
+    body = request.get_data(as_text=True)
+    
+    signature = headers.get('Twitch-Eventsub-Message-Signature')
+    timestamp = headers.get('Twitch-Eventsub-Message-Timestamp')
+    
+    if signature and timestamp:
+        message = headers.get('Twitch-Eventsub-Message-Id') + timestamp + body
+        expected_signature = 'sha256=' + hmac.new(
+            twitch_client_secret.encode('utf-8'),
+            message.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(expected_signature, signature):
+            print("Signature verification failed")
+            return 'Signature verification failed', 403
+        else:
+            broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
+            print("Signatures match", broadcaster_id)   
+    return '', 204
+
 @app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
 def match_template_spectating_route(event_id):
     user_id = request.json.get('userId')
