@@ -4,7 +4,7 @@ import time
 import os
 import logging
 from fuzzywuzzy import process
-from firebase import initialize_firebase
+from ..config.firebase import initialize_firebase
 from firebase_admin import db
 from collections import deque
 from multiprocessing import Process, Manager, Queue

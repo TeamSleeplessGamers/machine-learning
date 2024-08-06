@@ -1,0 +1,19 @@
+from flask import Flask
+from flask_cors import CORS
+from dotenv import load_dotenv
+from .config.firebase import initialize_firebase
+from .routes.routes import routes_bp
+
+def create_app():
+    """Factory to create the Flask application
+    :return: A `Flask` application instance
+    """
+    app = Flask(__name__)
+    load_dotenv(".env")
+    initialize_firebase()
+    CORS(app, origins='*')
+
+    # Register the Blueprint
+    app.register_blueprint(routes_bp)
+
+    return app

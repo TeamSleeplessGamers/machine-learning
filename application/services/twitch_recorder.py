@@ -1,7 +1,7 @@
 import os
 import subprocess
 import threading
-from warzone import match_template_spectating_in_video
+from .warzone import match_template_spectating_in_video
 
 client_id = os.getenv('CLIENT_ID')
 client_secret = os.getenv('CLIENT_SECRET')

@@ -3,8 +3,8 @@ import time
 from datetime import datetime, timedelta
 import os
 import requests
-from twitch_oauth import get_twitch_oauth_token
-from database import Database
+from .twitch_oauth import get_twitch_oauth_token
+from ..config.database import Database
 
 twitch_client_id = os.getenv('CLIENT_ID')
 twitch_client_secret = os.getenv('CLIENT_SECRET')
