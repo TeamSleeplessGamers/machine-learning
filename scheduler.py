@@ -5,8 +5,6 @@ import os
 import requests
 from twitch_oauth import get_twitch_oauth_token
 from database import Database
-import signal
-import sys
 
 twitch_client_id = os.getenv('CLIENT_ID')
 twitch_client_secret = os.getenv('CLIENT_SECRET')
@@ -107,23 +105,19 @@ def subscribe_to_twitch_streamers():
                 print(f"Other error occurred: {err}")
         print("Finished Processing User Info.")
 
-# Set target time to 9 AM
-now = datetime.now()
-target_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
+def start_scheduler():
+    # Set target time to 9 AM
+    now = datetime.now()
+    target_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
 
-if now > target_time:
-    target_time += timedelta(days=1)
-schedule.every().day.at(target_time.strftime("%H:%M:%S")).do(subscribe_to_twitch_streamers)
+    # If the target time has already passed today, set it for tomorrow
+    if now > target_time:
+        target_time += timedelta(days=1)
 
-def signal_handler(sig, frame):
-    print("Shutting down...")
-    database.close_connection()
-    sys.exit(0)
+    # Schedule the job to run daily at 9 AM
+    schedule.every().day.at(target_time.strftime("%H:%M:%S")).do(subscribe_to_twitch_streamers)
 
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
     

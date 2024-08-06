@@ -15,6 +15,8 @@ import logging
 from heatmap_generator import generate_heatmap
 import requests
 import csv
+import threading
+import scheduler
 from datetime import datetime
 from database import Database
 
@@ -304,6 +306,15 @@ def generate_and_serve_heatmap():
         return send_file(heatmap_path, mimetype='image/png')
     else:
         return jsonify({'message': 'Failed to generate heatmap'}), 500
+
+# Scheduler thread function
+def start_scheduler_thread():
+    scheduler_thread = threading.Thread(target=scheduler.start_scheduler)
+    scheduler_thread.daemon = True
+    scheduler_thread.start()
+
+# Start the scheduler
+start_scheduler_thread()
 
 # Start the application
 if __name__ == "__main__":
