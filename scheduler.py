@@ -46,36 +46,34 @@ def list_of_sg_subscribed_twitch_streamers():
 def process_user_id_to_subscribe(user_ids):
     for user_id in user_ids:
         headers = {
-        'Authorization': f'Bearer {get_twitch_oauth_token()}',
-        'Client-Id': twitch_client_id,
-    }
-    
-    # Define the subscription payload
-    payload = {
-        "type": "stream.online",
-        "version": "1",
-        "condition": {
-            "broadcaster_user_id": user_id
-        },
-        "transport": {
-            "method": "webhook",
-            "callback": twitch_webhook_url,
-            "secret": twitch_client_secret
+            'Authorization': f'Bearer {get_twitch_oauth_token()}',
+            'Client-Id': twitch_client_id,
         }
-    }
-
-    try:
-        response = requests.post('https://api.twitch.tv/helix/eventsub/subscriptions', headers=headers, json=payload)
-        response.raise_for_status()
-        response_data = response.json()
-        print(f"Successfully subscribed to user {user_id}: {response_data}")
     
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-    except requests.exceptions.RequestException as req_err:
-        print(f"Request error occurred: {req_err}")
-    except Exception as err:
-        print(f"An unexpected error occurred: {err}")
+        payload = {
+            "type": "stream.online",
+            "version": "1",
+            "condition": {
+                "broadcaster_user_id": user_id
+            },
+            "transport": {
+                "method": "webhook",
+                "callback": twitch_webhook_url,
+                "secret": twitch_client_secret
+            }
+        }
+
+        try:
+            response = requests.post('https://api.twitch.tv/helix/eventsub/subscriptions', headers=headers, json=payload)
+            response.raise_for_status()
+            print(f"Successfully subscribed to user {user_id}")
+        
+        except requests.exceptions.HTTPError as http_err:
+            print(f"HTTP error occurred: {http_err}")
+        except requests.exceptions.RequestException as req_err:
+            print(f"Request error occurred: {req_err}")
+        except Exception as err:
+            print(f"An unexpected error occurred: {err}")
              
 def subscribe_to_twitch_streamers():
     users = database.get_list_of_sg_users()
@@ -108,10 +106,13 @@ def subscribe_to_twitch_streamers():
             except Exception as err:
                 print(f"Other error occurred: {err}")
         print("Finished Processing User Info.")
-now = datetime.now()
-target_time = now + timedelta(seconds=1)
-time_difference = (target_time - now).seconds
 
+# Set target time to 9 AM
+now = datetime.now()
+target_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
+
+if now > target_time:
+    target_time += timedelta(days=1)
 schedule.every().day.at(target_time.strftime("%H:%M:%S")).do(subscribe_to_twitch_streamers)
 
 def signal_handler(sig, frame):
