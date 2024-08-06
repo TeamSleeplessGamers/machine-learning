@@ -4,5 +4,7 @@
 .env
 /recorded
 /processed
-/processed_frames
+/output-frames
 /roi_frames
+firebase-dev.json
+warzone-streamer.csv

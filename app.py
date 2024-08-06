@@ -1,351 +1,321 @@
-from flask import Flask, request, jsonify, redirect, session
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
+import pandas as pd
+from firebase import initialize_firebase
 import time
-from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-import requests
+from twitch_recorder import TwitchRecorder
+from twitch_oauth import get_twitch_oauth_token
 import pytesseract
 import os
 import cv2
-import psycopg2
-import subprocess
+import hashlib
+import hmac
 import logging
-import shutil
-import enum
+from heatmap_generator import generate_heatmap
+import requests
+import csv
 import threading
+import scheduler
+from datetime import datetime
+from database import Database
 
-load_dotenv()  # Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app, origins='*')  # Enable CORS for all origins
-app.secret_key = os.urandom(24)
+CORS(app, origins='*')
 
-client_id = os.getenv('CLIENT_ID')
-client_secret = os.getenv('CLIENT_SECRET')
-redirect_uri = os.getenv('STREAM_LABS_REDIRECT')
-token_url = 'https://streamlabs.com/api/v2.0/token'
-oauth_url = 'https://streamlabs.com/api/v2.0/authorize'
-database_url = os.getenv('DATABASE_URL')
+initialize_firebase()
+database = Database()  # Initialize the database
+conn = database.get_connection()
 
-# Configure Chrome options
-chrome_options = Options()
-chrome_options.add_argument('--headless')  # Run Chrome in headless mode
-chrome_options.add_argument('--disable-gpu')  # Disable GPU acceleration
-chrome_options.add_argument('--no-sandbox')  # Bypass OS security model
-chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
+twitch_client_id = os.getenv('CLIENT_ID')
+twitch_client_secret = os.getenv('CLIENT_SECRET')
 
-# Initialize the Chrome driver
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-
-# Global database connection
-conn = None
-
-def initialize_database():
-    global conn
-    try:
-        conn = psycopg2.connect(database_url)
-        print("Database connection established successfully.")
-    except Exception as e:
-        print(f"Error connecting to the database: {e}")
-        conn = None
-
-class TwitchResponseStatus(enum.Enum):
-    ONLINE = 0
-    OFFLINE = 1
-    NOT_FOUND = 2
-    UNAUTHORIZED = 3
-    ERROR = 4
-
-class TwitchRecorder:
-    def __init__(self, username):
-        # global configuration
-        self.ffmpeg_path = "ffmpeg"
-        self.disable_ffmpeg = False
-        self.refresh = 15
-        self.root_path = "./"
-
-        # user configuration
-        self.username = username
-        self.quality = "best"
-
-        # twitch configuration
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.token_url = f"https://id.twitch.tv/oauth2/token?client_id={self.client_id}&client_secret={self.client_secret}&grant_type=client_credentials"
-        self.url = "https://api.twitch.tv/helix/streams"
-        self.access_token = self.fetch_access_token()
-    def fetch_access_token(self):
-        token_response = requests.post(self.token_url, timeout=15)
-        token_response.raise_for_status()
-        token = token_response.json()
-        return token["access_token"]
-
-    def run(self):
-        # path to recorded stream
-        recorded_path = os.path.join(self.root_path, "recorded", self.username)
-        # path to finished video, errors removed
-        processed_path = os.path.join(self.root_path, "processed", self.username)
-
-        # create directory for recordedPath and processedPath if not exist
-        if os.path.isdir(recorded_path) is False:
-            os.makedirs(recorded_path)
-        if os.path.isdir(processed_path) is False:
-            os.makedirs(processed_path)
-
-        # make sure the interval to check user availability is not less than 15 seconds
-        if self.refresh < 15:
-            logging.warning("check interval should not be lower than 15 seconds")
-            self.refresh = 15
-            logging.info("system set check interval to 15 seconds")
-
-        logging.info("checking for %s every %s seconds, recording with %s quality",
-                     self.username, self.refresh, self.quality)
-        self.loop_check(recorded_path, processed_path)
-    def record_stream(self, recorded_filename):
-        subprocess.call(
-            ["streamlink", "--twitch-disable-ads", "twitch.tv/" + self.username, self.quality,
-             "-o", recorded_filename])
-
-    def process_recorded_file(self, recorded_filename, processed_filename):
-        #if os.path.exists(processed_filename):
-        #    os.remove(processed_filename)  # Delete existing processed file if it exists
-
-        if self.disable_ffmpeg:
-            logging.info("moving: %s", recorded_filename)
-            shutil.move(recorded_filename, processed_filename)
-        else:
-            logging.info("fixing %s", recorded_filename)
-            self.ffmpeg_copy_and_fix_errors(recorded_filename, processed_filename)
-        # After processing, use OpenCV VideoCapture to work with the processed video file
-        self.save_processed_frames(processed_filename)
-    def ffmpeg_copy_and_fix_errors(self, recorded_filename, processed_filename):
-        try:
-            subprocess.call(
-                [self.ffmpeg_path, "-err_detect", "ignore_err", "-i", recorded_filename, "-c", "copy",
-                 processed_filename])
-            os.remove(recorded_filename)
-        except Exception as e:
-            logging.error(e)
-    def save_processed_frames(self, processed_filename):
-        cap = cv2.VideoCapture(processed_filename, cv2.CAP_FFMPEG)
-
-        output_folder = "./processed_frames"
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-
-        frame_count = 0
-        template = cv2.imread('./game_templates/warzone/interest_1.png', 0)  # Load your template image
-        template_width, template_height = template.shape[::-1]  # Template width and height
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Ensure frame is valid
-            if frame is None:
-                continue
-            
-            # Process each frame as needed (convert to grayscale)
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            # Perform template matching
-            if template is None:
-                continue
-            
-            result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
-            _, _, _, max_loc = cv2.minMaxLoc(result)
-            
-            # Extract top-left and bottom-right coordinates of the detected area
-            top_left = max_loc
-            bottom_right = (top_left[0] + template_width, top_left[1] + template_height)
-            
-            # Draw a rectangle around the detected area
-            x, y, width, height = 1800, 20, 50, 100
-            cv2.rectangle(frame, (x, y), (x + width, y + height), (0, 255, 0), 2)  # Green rectangle, thickness 2
-
-            # Save the processed frame with the rectangle to the output folder
-            output_filename = os.path.join("./processed_frames", f"frame_{frame_count}.jpg")
-            cv2.imwrite(output_filename, frame)
-            
-            # Extract the ROI using the rectangle's coordinates
-            roi = frame[y:y+height, x:x+width]
-
-            # Convert ROI to grayscale
-            gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            
-            # Enhance contrast (optional)
-            enhanced_roi = cv2.equalizeHist(gray_roi)
-            
-            # Apply adaptive thresholding to create a binary image
-            binary_roi = cv2.adaptiveThreshold(enhanced_roi, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-            
-            # Save the ROI image to a folder for inspection (binary image)
-            roi_output_filename = os.path.join('./roi_frames', f"roi_{frame_count}.jpg")
-            cv2.imwrite(roi_output_filename, binary_roi)
-            
-            # Example: Use OCR (e.g., pytesseract) to extract text from the ROI
-            text = pytesseract.image_to_string(binary_roi, config='outputbase digits')
-            print(f"Text detected in ROI: {text}")
-            
-            frame_count += 1
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-
-    def check_user(self):
-        info = None
-        status = TwitchResponseStatus.ERROR
-        try:
-            headers = {"Client-ID": self.client_id, "Authorization": "Bearer " + self.access_token}
-            r = requests.get(self.url + "?user_login=" + self.username, headers=headers, timeout=15)
-            r.raise_for_status()
-            info = r.json()
-            if info is None or not info["data"]:
-                status = TwitchResponseStatus.OFFLINE
-            else:
-                status = TwitchResponseStatus.ONLINE
-        except requests.exceptions.RequestException as e:
-            if e.response:
-                if e.response.status_code == 401:
-                    status = TwitchResponseStatus.UNAUTHORIZED
-                if e.response.status_code == 404:
-                    status = TwitchResponseStatus.NOT_FOUND
-        return status, info
-
-    def loop_check(self, recorded_path, processed_path):
-        while True:
-            status, info = self.check_user()
-            if status == TwitchResponseStatus.NOT_FOUND:
-                logging.error("username not found, invalid username or typo")
-                time.sleep(self.refresh)
-            elif status == TwitchResponseStatus.ERROR:
-                logging.error("%s unexpected error. will try again in 5 minutes",
-                              datetime.now().strftime("%Hh%Mm%Ss"))
-                time.sleep(300)
-            elif status == TwitchResponseStatus.OFFLINE:
-                logging.info("%s currently offline, checking again in %s seconds", self.username, self.refresh)
-                time.sleep(self.refresh)
-            elif status == TwitchResponseStatus.UNAUTHORIZED:
-                logging.info("unauthorized, will attempt to log back in immediately")
-                self.access_token = self.fetch_access_token()
-            elif status == TwitchResponseStatus.ONLINE:
-                logging.info("%s online, stream recording in session", self.username)
-                filename = self.username + ".mp4"
-                recorded_filename = os.path.join(recorded_path, filename)
-                processed_filename = os.path.join(processed_path, filename)
-
-                # Start recording in a new thread
-                #record_thread = threading.Thread(target=self.record_stream, args=(recorded_filename,))
-                #record_thread.start()
-
-                # Start processing in a new thread
-                process_thread = threading.Thread(target=self.process_recorded_file, args=(recorded_filename, processed_filename))
-                process_thread.start()
-
-                logging.info("processing and recording started, going back to checking...")
-                time.sleep(self.refresh)
-
+threshold = 10 
 
 # Routes
 @app.route('/')
 def index():
     return '''
-        <h1>Welcome to Stream Integration</h1>
-        <a href="/authorize_streamlabs">Authorize with Streamlabs</a>
+        <h1>Welcome to Sleepless Gamers Integration</h1>
     '''
 
-@app.route('/authorize_streamlabs')
-def authorize_streamlabs():
-    userid = request.args.get('userid') or ""
-    auth_url = f'{oauth_url}?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope=mediashare.control&state={userid}'
-    return jsonify({'auth_url': auth_url})
+def match_template_in_video(video_path, template_path, output_folder, threshold=0.1, save_as_images=True):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-@app.route('/callback')
-def callback():
-    initialize_database()
-    code = request.args.get('code')
-    userid = request.args.get('state')
-    response = requests.post(token_url, data={
-        'grant_type': 'authorization_code',
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'code': code,
-        'redirect_uri': redirect_uri
-    })
+    timestamp = int(time.time())
+    output_video_path = os.path.join(output_folder, f'output_video_{timestamp}.mp4')
 
-    token_data = response.json()
-    session['streamlabs_token'] = token_data['access_token']
+    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
+    if template is None:
+        print("Error: Cannot load template image.")
+        return
+
+    template_height, template_width = template.shape
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Error: Cannot open video file.")
+        return
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    # Insert the token into the database with userid and created_at timestamp
-    try:
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        with conn.cursor() as cursor:
-            cursor.execute("INSERT INTO user_streamlabs_tokens (user_id, streamlabs_token, created_at) VALUES (%s, %s, %s)",
-                           (userid, token_data['access_token'], current_time))
-            conn.commit()
-    except Exception as e:
-        print(f"Error inserting token into database: {e}")
-        return jsonify({'error': 'Failed to insert token into database'}), 500
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
+    
+    if not save_as_images:
+        out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
+        if not out.isOpened():
+            print("Error: Cannot open video writer.")
+            cap.release()
+            return
 
-    return 'Streamlabs authorization successful!'
+    frame_count = 0
 
-@app.route('/scrape', methods=['POST'])
-def scrape():
-    data = request.json
-    url = data.get('url')
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    if not url:
-        return jsonify({'error': 'URL is required'}), 400
+        frame_count += 1
+        if frame_count % 30 == 0:
+            print(f"Processing frame {frame_count}")
 
-    try:
-        # Open the webpage
-        driver.get(url)
+        height = 200
+        width = int((height / frame.shape[0]) * frame.shape[1])
+        x_start = max(frame.shape[1] - width, 0) 
+        y_start = 0
+        y_end = min(y_start + height, frame.shape[0])
 
-        # Wait for the page to load and JavaScript to execute
-        time.sleep(5)  # Adjust this delay as needed
+        cropped_frame = frame[y_start:y_end, x_start:frame.shape[1] ]
 
-        # Find all iframe elements
-        iframe_elements = driver.find_elements(By.TAG_NAME, 'iframe')
+        new_height = min(cropped_frame.shape[0] + 500, frame.shape[0])
+        new_width = min(cropped_frame.shape[1] + 500, frame.shape[1])
 
-        # Extract src attribute values from iframe elements
-        twitch_urls = []
-        for iframe in iframe_elements:
-            src = iframe.get_attribute('src')
-            if src.startswith('https://player.twitch.tv'):
-                twitch_urls.append(src)
+        resized_frame = cv2.resize(cropped_frame, (new_width, new_height))
 
-        return jsonify({'twitch_urls': twitch_urls})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        gray_cropped_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
 
-@app.route('/shutdown', methods=['POST'])
-def shutdown():
-    shutdown_func = request.environ.get('werkzeug.server.shutdown')
-    if shutdown_func is None:
-        raise RuntimeError('Not running with the Werkzeug Server')
-    shutdown_func()
-    return 'Server shutting down...'
+        if frame.ndim == 3: 
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        elif frame.ndim == 4:
+            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY)
+        else:
+            gray_frame = frame
 
-@app.route('/start_recording', methods=['POST'])
-def start_recording():
-    data = request.json
-    username = data.get('username')
-    if not username:
-        return jsonify({'error': 'Username is required'}), 400
+        if template.ndim == 3:
+            gray_template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        elif template.ndim == 4:
+            gray_template = cv2.cvtColor(template, cv2.COLOR_BGRA2GRAY)
+        else:
+            gray_template = template
 
-    try:
-        recorder = TwitchRecorder(username)
-        threading.Thread(target=recorder.run).start()
-        return jsonify({'message': 'Recording started for user: ' + username})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        # Ensure both images have the same data type
+        if gray_frame.dtype != gray_template.dtype:
+            gray_template = gray_template.astype(gray_frame.dtype)
+
+        # Ensure images are in the required depth (CV_8U or CV_32F)
+        if gray_frame.dtype != 'uint8' and gray_frame.dtype != 'float32':
+            gray_frame = gray_frame.astype('uint8')
+        if gray_template.dtype != 'uint8' and gray_template.dtype != 'float32':
+            gray_template = gray_template.astype('uint8')
+
+
+        detected_text = pytesseract.image_to_string(gray_frame)
+  
+        # Search for the word "SPECTATING" in the detected text (case-insensitive)
+        search_word = "SPECTATING".lower()
+        if search_word in detected_text.lower():
+            print(f"Word '{search_word.upper()}' found in the detected text.")
+        else:
+            print(f"Word '{search_word.upper()}' not found in the detected text.", detected_text)
+            
+        test_result = cv2.matchTemplate(gray_frame, gray_template, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(test_result)
+
+        if (template_height > gray_cropped_frame.shape[0]) or (template_width > gray_cropped_frame.shape[1]):
+            print("Warning: Template is larger than the cropped frame. Skipping this frame.")
+            continue
+
+        result = cv2.matchTemplate(gray_cropped_frame, template, cv2.TM_CCOEFF_NORMED)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+
+        reduced_width = int(template_width * 0.7)
+        reduced_height = int(template_height * 1.5)
+        
+        top_left = None
+        bottom_right = None
+
+        if max_val >= threshold:
+            top_left = max_loc
+            bottom_right = (top_left[0] + reduced_width, top_left[1] + reduced_height)
+            
+            # Draw a rectangle around the matched region if a match was found
+            if top_left is not None and bottom_right is not None:
+                cv2.rectangle(gray_cropped_frame, top_left, bottom_right, (0, 255, 0), 2)
+
+                test_roi = cropped_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+                # Extract the region of interest (ROI) within the rectangle
+                roi = gray_cropped_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+                
+                # Crop 50 pixels off the top of the ROI
+                #if roi.shape[0] > 50:
+                #    roi = roi[50:, :]
+
+                print(frame_count, f"Detected text:")
+            if save_as_images:
+                output_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
+                cv2.imwrite(output_filename, gray_frame)
+            else:
+                out.write(gray_cropped_frame)
+    cap.release()
+    if not save_as_images:
+        out.release()
+    cv2.destroyAllWindows()
+  
+@app.route('/match_template', methods=['POST'])
+def match_template_route():
+    output_folder = "./test_video"
+
+    match_template_in_video("./processed/test_1.mp4", "./game_templates/warzone/spectating_1.jpg", output_folder)
+
+    return jsonify({'status': 'success', 'message': 'Processing completed.'})
+
+def check_user_online(user_login):
+    headers = {
+        'Client-ID': twitch_client_id,    
+        'Authorization': f'Bearer {get_twitch_oauth_token()}'
+    }
+    
+    stream_info_url = f'https://api.twitch.tv/helix/streams?user_login={user_login}'
+    
+    response = requests.get(stream_info_url, headers=headers)
+    stream_data = response.json()
+    
+    if 'data' in stream_data and len(stream_data['data']) > 0:
+        stream_info = stream_data['data'][0]
+        return {
+            'status': 'online',
+            'stream_info': {
+                'title': stream_info['title'],
+                'game_name': stream_info['game_name'],
+                'viewer_count': stream_info['viewer_count']
+            }
+        }
+    else:
+        return {'status': 'offline'}
+  
+def get_day_and_time():
+    now = datetime.now()
+    day_of_week = now.strftime("%A")
+    current_hour = now.hour
+    return day_of_week, current_hour
+
+def append_to_csv(display_name, day, time):
+    with open('warzone-streamer.csv', mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([display_name, day, time])
+  
+@app.route('/webhooks/callback', methods=['POST'])
+def webhook_callback():
+    headers = request.headers
+    body = request.get_data(as_text=True)
+    
+    signature = headers.get('Twitch-Eventsub-Message-Signature')
+    timestamp = headers.get('Twitch-Eventsub-Message-Timestamp')
+    event_type = headers.get('Twitch-Eventsub-Message-Type')
+
+    if signature and timestamp:
+        message = headers.get('Twitch-Eventsub-Message-Id') + timestamp + body
+        expected_signature = 'sha256=' + hmac.new(
+            twitch_client_secret.encode('utf-8'),
+            message.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if not hmac.compare_digest(expected_signature, signature):
+            print("Signature verification failed")
+            return 'Signature verification failed', 403
+        if event_type == "notification":
+            broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
+            stream_online = request.json['subscription']['type']
+            if len(broadcaster_id) > 0 and stream_online == "stream.online":
+                api_endpoint = f"https://api.twitch.tv/helix/users?id={broadcaster_id}"
+                headers = {
+                    'Authorization': f'Bearer {get_twitch_oauth_token()}',
+                    'Client-Id': twitch_client_id
+                }
+                try:
+                    response = requests.get(api_endpoint, headers=headers) 
+                    response.raise_for_status()         
+                    response_data = response.json()
+                    display_name = response_data['data'][0]['display_name']
+                    
+                    if len(display_name) > 0:
+                        day_of_week, current_time = get_day_and_time()
+                        append_to_csv(display_name, day_of_week, current_time)
+                except requests.exceptions.HTTPError as http_err:
+                    print(f"HTTP error occurred: {http_err}")
+                except Exception as err:
+                    print(f"Other error occurred: {err}")
+    return '', 204
+
+@app.route('/match_template_spectating/<string:event_id>', methods=['POST'])
+def match_template_spectating_route(event_id):
+    user_id = request.json.get('userId')
+    if not user_id:
+        return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
+
+    twitch_channel = request.json.get('twitchProfile')
+    if not twitch_channel:
+        return jsonify({'status': 'error', 'message': 'Twitch Username is required.'}), 400
+
+    online_status = check_user_online(twitch_channel)
+    status = online_status.get('status')
+    
+    if status == 'online':
+        logging.info(f"Starting Process Recoding for {twitch_channel}")
+        recorder = TwitchRecorder(twitch_channel, event_id, user_id)
+        recorder.process_warzone_video_stream_info()
+    else:
+        return jsonify({
+            'message': 'Twitch User Must Not Be Online?',
+            'details': status
+        })              
+    return jsonify({
+        'message': 'Twitch User Online Status',
+        'details': status
+    })
+    
+@app.route('/heatmap', methods=['GET'])
+def generate_and_serve_heatmap():
+    csv_path = 'warzone-streamer.csv'
+    heatmap_path = 'heatmap.png'
+    
+    if not os.path.exists(csv_path):
+        return jsonify({'message': 'CSV file not found'}), 404
+    
+    df = pd.read_csv(csv_path)
+    
+    generate_heatmap(df, heatmap_path)
+    
+    if os.path.exists(heatmap_path):
+        return send_file(heatmap_path, mimetype='image/png')
+    else:
+        return jsonify({'message': 'Failed to generate heatmap'}), 500
+
+# Scheduler thread function
+def start_scheduler_thread():
+    scheduler_thread = threading.Thread(target=scheduler.start_scheduler)
+    scheduler_thread.daemon = True
+    scheduler_thread.start()
+
+# Start the scheduler
+start_scheduler_thread()
+
 # Start the application
 if __name__ == "__main__":
     logging.basicConfig(filename="twitch-recorder.log", level=logging.INFO)
@@ -353,6 +323,4 @@ if __name__ == "__main__":
     try:
         app.run(debug=True, host='0.0.0.0', port=8000)
     finally:
-        driver.quit()
-        if conn:
-            conn.close()
+        database.close_connection()
