@@ -93,10 +93,6 @@ def frame_worker(frame_queue, event_id, user_id):
 
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     with Manager() as manager:
-        output_folder = "./output-frames"
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print("Error: Cannot open video file.")
@@ -119,9 +115,6 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
 
             frame_count += 1
             if frame_count % 300 == 0:
-                frame_filename = os.path.join(output_folder, f"frame_{frame_count}.jpg")
-                # Save the frame to the output folder
-                cv2.imwrite(frame_filename, frame)
                 if not frame_queue.full():
                     frame_queue.put((frame, frame_count))
                 else:
