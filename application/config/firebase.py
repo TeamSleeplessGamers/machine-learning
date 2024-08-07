@@ -4,7 +4,6 @@ from firebase_admin import credentials, db
 import os
 
 def initialize_firebase():
-    # Initialize Firebase
     if not firebase_admin._apps:
         cred  = credentials.Certificate(os.environ['FIREBASE_CRED_PATH'])
         firebase_admin.initialize_app(cred, {
