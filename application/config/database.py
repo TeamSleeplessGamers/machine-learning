@@ -4,11 +4,11 @@ import psycopg2
 class Database:
     def __init__(self):
         self.conn = None
-        self.database_url = os.environ['DATABASE_URL']
         self.initialize_database()
 
     def initialize_database(self):
         try:
+            self.database_url = os.environ['DATABASE_URL']
             self.conn = psycopg2.connect(self.database_url)
             print("Database connection established successfully.")
         except Exception as e:
