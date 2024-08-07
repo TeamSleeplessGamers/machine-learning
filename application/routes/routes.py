@@ -20,9 +20,6 @@ from ..config.database import Database
 database = Database()
 conn = database.get_connection()
 
-twitch_client_id = os.environ['CLIENT_ID']
-twitch_client_secret = os.environ['CLIENT_SECRET']
-
 threshold = 10 
 routes_bp = Blueprint('routes', __name__)
 
@@ -177,6 +174,8 @@ def match_template_route():
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
 def check_user_online(user_login):
+    twitch_client_id = os.environ['CLIENT_ID']
+    
     headers = {
         'Client-ID': twitch_client_id,    
         'Authorization': f'Bearer {get_twitch_oauth_token()}'
@@ -213,6 +212,8 @@ def append_to_csv(display_name, day, time):
 
 @routes_bp.route('/webhooks/callback', methods=['POST'])
 def webhook_callback():
+    twitch_client_id = os.environ['CLIENT_ID']
+    twitch_client_secret = os.environ['CLIENT_SECRET']
     headers = request.headers
     body = request.get_data(as_text=True)
     

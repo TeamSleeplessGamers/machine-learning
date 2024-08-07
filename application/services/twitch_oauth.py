@@ -1,12 +1,11 @@
 import os
 import requests
 
-twitch_client_id = os.environ['CLIENT_ID']
-twitch_client_secret = os.environ['CLIENT_SECRET']
-twitch_webhook_url = os.environ['TWITCH_WEBHOOK_URL']
-twitch_oauth_url = os.environ['TWITCH_OAUTH_URL']
-
 def get_twitch_oauth_token():
+    twitch_client_id = os.environ['CLIENT_ID']
+    twitch_client_secret = os.environ['CLIENT_SECRET']
+    twitch_oauth_url = os.environ['TWITCH_OAUTH_URL']
+
     params = {
         'client_id': twitch_client_id,
         'client_secret': twitch_client_secret,
