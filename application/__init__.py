@@ -4,13 +4,13 @@ from dotenv import load_dotenv
 from .config.firebase import initialize_firebase
 from .routes.routes import routes_bp
 
+load_dotenv(".env")
 app = Flask(__name__)
 
 def create_app():
     """Factory to create the Flask application
     :return: A `Flask` application instance
     """
-    load_dotenv(".env")
     initialize_firebase()
     CORS(app, origins='*')
 
