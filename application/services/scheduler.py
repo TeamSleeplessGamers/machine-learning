@@ -6,10 +6,10 @@ import requests
 from .twitch_oauth import get_twitch_oauth_token
 from ..config.database import Database
 
-twitch_client_id = os.getenv('CLIENT_ID')
-twitch_client_secret = os.getenv('CLIENT_SECRET')
-twitch_webhook_url = os.getenv('TWITCH_WEBHOOK_URL')
-twitch_oauth_url = os.getenv('TWITCH_OAUTH_URL')
+twitch_client_id = os.environ['CLIENT_ID']
+twitch_client_secret = os.environ['CLIENT_SECRET']
+twitch_webhook_url = os.environ['TWITCH_WEBHOOK_URL']
+twitch_oauth_url = os.environ['TWITCH_OAUTH_URL']
 
 database = Database()
 conn = database.get_connection()

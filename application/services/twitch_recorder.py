@@ -3,8 +3,8 @@ import subprocess
 import threading
 from .warzone import match_template_spectating_in_video
 
-client_id = os.getenv('CLIENT_ID')
-client_secret = os.getenv('CLIENT_SECRET')
+client_id = os.environ['CLIENT_ID']
+client_secret = os.environ['CLIENT_SECRET']
  
 class TwitchRecorder:
     def __init__(self, username, event_id, user_id):

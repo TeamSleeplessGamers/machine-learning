@@ -20,8 +20,8 @@ from ..config.database import Database
 database = Database()
 conn = database.get_connection()
 
-twitch_client_id = os.getenv('CLIENT_ID')
-twitch_client_secret = os.getenv('CLIENT_SECRET')
+twitch_client_id = os.environ['CLIENT_ID']
+twitch_client_secret = os.environ['CLIENT_SECRET']
 
 threshold = 10 
 routes_bp = Blueprint('routes', __name__)

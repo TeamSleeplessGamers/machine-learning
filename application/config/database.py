@@ -4,7 +4,7 @@ import psycopg2
 class Database:
     def __init__(self):
         self.conn = None
-        self.database_url = os.getenv('DATABASE_URL')
+        self.database_url = os.environ['DATABASE_URL']
         self.initialize_database()
 
     def initialize_database(self):
