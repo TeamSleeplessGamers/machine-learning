@@ -10,7 +10,6 @@ class Database:
         try:
             self.database_url = os.environ['DATABASE_URL']
             self.conn = psycopg2.connect(self.database_url)
-            print("Database connection established successfully.")
         except Exception as e:
             print(f"Error connecting to the database: {e}")
             self.conn = None
