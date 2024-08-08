@@ -285,16 +285,20 @@ def match_template_spectating_route(event_id):
     
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
-    csv_path = '../../warzone-streamer.csv'
-    heatmap_path = '../../heatmap.png'
+    # Define paths relative to the current script's directory
+    base_path = os.path.dirname(__file__)  # Directory of this script
+    csv_path = os.path.join(base_path, '..', '..', 'warzone-streamer.csv')
+    heatmap_path = os.path.join(base_path, '..', '..', 'heatmap.png')
     
+    # Ensure the file exists
     if not os.path.exists(csv_path):
         return jsonify({'message': 'CSV file not found'}), 404
     
+    # Read the CSV and generate the heatmap
     df = pd.read_csv(csv_path)
-    
     generate_heatmap(df, heatmap_path)
     
+    # Check if heatmap was created and serve it
     if os.path.exists(heatmap_path):
         return send_file(heatmap_path, mimetype='image/png')
     else:
