@@ -42,12 +42,13 @@ def match_text_with_known_words(text, known_words):
             matched_words.append(word)
     return ' '.join(matched_words)
 
-def process_frame(frame, event_id, user_id):
+def process_frame(frame, event_id, user_id, frame_count):
     global frame_buffer
 
     try:
+        # Note: Gray Frame Here does a great job of Getting When circle closes
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Add your processing logic here
+        cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', gray_frame)
     except cv2.error as e:
         logging.error(f"Error processing frame: {e}")
         
@@ -81,7 +82,7 @@ def frame_worker(frame_queue, event_id, user_id):
             frame, frame_count = frame_queue.get(timeout=5)
             if frame is None:
                 break
-            process_frame(frame, event_id, user_id)
+            process_frame(frame, event_id, user_id, frame_count)
         except Empty:
             continue
     logging.info("Frame worker exiting")
