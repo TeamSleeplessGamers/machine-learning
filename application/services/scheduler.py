@@ -109,15 +109,12 @@ def subscribe_to_twitch_streamers():
         print("Finished Processing User Info.")
 
 def start_scheduler():
-    # Set target time to 9 AM
     now = datetime.now()
     target_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
 
-    # If the target time has already passed today, set it for tomorrow
     if now > target_time:
         target_time += timedelta(days=1)
 
-    # Schedule the job to run daily at 9 AM
     schedule.every().day.at(target_time.strftime("%H:%M:%S")).do(subscribe_to_twitch_streamers)
 
     while True:
