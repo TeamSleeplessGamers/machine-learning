@@ -23,7 +23,6 @@ conn = database.get_connection()
 threshold = 10 
 routes_bp = Blueprint('routes', __name__)
 
-# Routes
 @routes_bp.route('/')
 def index():
     return '''
@@ -53,7 +52,7 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Try 'XVID' if 'mp4v' fails
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     
     if not save_as_images:
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
@@ -102,11 +101,9 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
         else:
             gray_template = template
 
-        # Ensure both images have the same data type
         if gray_frame.dtype != gray_template.dtype:
             gray_template = gray_template.astype(gray_frame.dtype)
 
-        # Ensure images are in the required depth (CV_8U or CV_32F)
         if gray_frame.dtype != 'uint8' and gray_frame.dtype != 'float32':
             gray_frame = gray_frame.astype('uint8')
         if gray_template.dtype != 'uint8' and gray_template.dtype != 'float32':
@@ -115,7 +112,6 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
 
         detected_text = pytesseract.image_to_string(gray_frame)
 
-        # Search for the word "SPECTATING" in the detected text (case-insensitive)
         search_word = "SPECTATING".lower()
         if search_word in detected_text.lower():
             print(f"Word '{search_word.upper()}' found in the detected text.")
@@ -142,15 +138,12 @@ def match_template_in_video(video_path, template_path, output_folder, threshold=
             top_left = max_loc
             bottom_right = (top_left[0] + reduced_width, top_left[1] + reduced_height)
             
-            # Draw a rectangle around the matched region if a match was found
             if top_left is not None and bottom_right is not None:
                 cv2.rectangle(gray_cropped_frame, top_left, bottom_right, (0, 255, 0), 2)
 
                 test_roi = cropped_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
-                # Extract the region of interest (ROI) within the rectangle
                 roi = gray_cropped_frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
                 
-                # Crop 50 pixels off the top of the ROI
                 #if roi.shape[0] > 50:
                 #    roi = roi[50:, :]
 
@@ -285,30 +278,28 @@ def match_template_spectating_route(event_id):
     
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
-    # Define paths relative to the current script's directory
-    base_path = os.path.dirname(__file__)  # Directory of this script
+    base_path = os.path.dirname(__file__)  
     csv_path = os.path.join(base_path, '..', '..', 'warzone-streamer.csv')
     heatmap_path = os.path.join(base_path, '..', '..', 'heatmap.png')
     
-    # Ensure the file exists
     if not os.path.exists(csv_path):
         return jsonify({'message': 'CSV file not found'}), 404
     
-    # Read the CSV and generate the heatmap
     df = pd.read_csv(csv_path)
+
+    if df.empty:
+        return jsonify({'message': 'CSV file is empty, no data to generate heatmap'}), 400
+
     generate_heatmap(df, heatmap_path)
     
-    # Check if heatmap was created and serve it
     if os.path.exists(heatmap_path):
         return send_file(heatmap_path, mimetype='image/png')
     else:
         return jsonify({'message': 'Failed to generate heatmap'}), 500
 
-# Scheduler thread function
 def start_scheduler_thread():
     scheduler_thread = threading.Thread(target=start_scheduler)
     scheduler_thread.daemon = True
     scheduler_thread.start()
 
-# Start the scheduler
 start_scheduler_thread()
