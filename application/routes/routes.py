@@ -1,12 +1,14 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, Response
 import pandas as pd
 import time
 from ..services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
 import pytesseract
 import os
+from firebase_admin import db
 import cv2
 import hashlib
+import pytz
 import hmac
 import logging
 from ..utils.heatmap_generator import generate_heatmap
@@ -193,13 +195,20 @@ def check_user_online(user_login):
         return {'status': 'offline'}
 
 def get_day_and_time():
-    now = datetime.now()
-    day_of_week = now.strftime("%A")
-    current_hour = now.hour
+    est = pytz.timezone('America/New_York')
+    
+    now_utc = datetime.now(pytz.utc)
+    now_est = now_utc.astimezone(est)
+    
+    day_of_week = now_est.strftime("%A")
+    current_hour = now_est.hour
+    
     return day_of_week, current_hour
 
 def append_to_csv(display_name, day, time):
-    with open('warzone-streamer.csv', mode='a', newline='') as file:
+    base_path = os.path.dirname(__file__)  
+    csv_path = os.path.join(base_path, '..', '..', 'warzone-streamer.csv')
+    with open(csv_path, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow([display_name, day, time])
 
@@ -209,7 +218,8 @@ def webhook_callback():
     twitch_client_secret = os.environ['CLIENT_SECRET']
     headers = request.headers
     body = request.get_data(as_text=True)
-    
+    MESSAGE_TYPE_VERIFICATION = 'webhook_callback_verification'
+
     signature = headers.get('Twitch-Eventsub-Message-Signature')
     timestamp = headers.get('Twitch-Eventsub-Message-Timestamp')
     event_type = headers.get('Twitch-Eventsub-Message-Type')
@@ -223,12 +233,13 @@ def webhook_callback():
         ).hexdigest()
         
         if not hmac.compare_digest(expected_signature, signature):
-            print("Signature verification failed")
             return 'Signature verification failed', 403
+        if event_type == MESSAGE_TYPE_VERIFICATION:
+            return Response(request.json['challenge'], content_type='text/plain', status=200)
         if event_type == "notification":
             broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
-            stream_online = request.json['subscription']['type']
-            if len(broadcaster_id) > 0 and stream_online == "stream.online":
+            subscription_type = request.json['subscription']['type']
+            if len(broadcaster_id) > 0:
                 api_endpoint = f"https://api.twitch.tv/helix/users?id={broadcaster_id}"
                 headers = {
                     'Authorization': f'Bearer {get_twitch_oauth_token()}',
@@ -239,14 +250,25 @@ def webhook_callback():
                     response.raise_for_status()         
                     response_data = response.json()
                     display_name = response_data['data'][0]['display_name']
-                    
                     if len(display_name) > 0:
-                        day_of_week, current_time = get_day_and_time()
-                        append_to_csv(display_name, day_of_week, current_time)
+                        if subscription_type == "stream.online":
+                            day_of_week, current_time = get_day_and_time()
+                            append_to_csv(display_name, day_of_week, current_time)
+                            db_user = database.get_user_by_twitch_channel(display_name)
+                            if db_user:
+                                user_id = db_user['id']
+                                db_ref = db.reference(f'users/{user_id}')
+                                db_ref.update({'displayHome': True, 'twitchProfile': display_name })
+                        elif subscription_type == "stream.offline":
+                            db_user = database.get_user_by_twitch_channel(display_name)
+                            if db_user:
+                                user_id = db_user['id']
+                                db_ref = db.reference(f'users/{user_id}')
+                                db_ref.update({'displayHome': False})
                 except requests.exceptions.HTTPError as http_err:
-                    print(f"HTTP error occurred: {http_err}")
+                    return f"HTTP error occurred: {http_err}"
                 except Exception as err:
-                    print(f"Other error occurred: {err}")
+                    return f"Other error occurred: {err}"
     return '', 204
 
 @routes_bp.route('/match_template_spectating/<string:event_id>', methods=['POST'])
