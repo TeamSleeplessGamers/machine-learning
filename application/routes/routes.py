@@ -258,7 +258,7 @@ def webhook_callback():
                             if db_user:
                                 user_id = db_user['id']
                                 db_ref = db.reference(f'users/{user_id}')
-                                db_ref.update({'displayHome': True})
+                                db_ref.update({'displayHome': True, 'twitchProfile': display_name })
                         elif subscription_type == "stream.offline":
                             db_user = database.get_user_by_twitch_channel(display_name)
                             if db_user:
