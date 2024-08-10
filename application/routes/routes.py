@@ -278,6 +278,7 @@ def match_template_spectating_route(event_id):
     
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
+    print("am i pinging this endpoitn")
     base_path = os.path.dirname(__file__)  
     csv_path = os.path.join(base_path, '..', '..', 'warzone-streamer.csv')
     heatmap_path = os.path.join(base_path, '..', '..', 'heatmap.png')
