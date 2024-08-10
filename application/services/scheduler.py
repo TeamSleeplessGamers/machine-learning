@@ -25,7 +25,11 @@ def list_of_sg_subscribed_twitch_streamers():
             response.raise_for_status()
             response_data = response.json()
 
-            broadcaster_user_ids.extend(item['condition']['broadcaster_user_id'] for item in response_data['data'])
+            broadcaster_user_ids.extend(
+                item['condition']['broadcaster_user_id']
+                for item in response_data['data']
+                if item['cost'] == 1
+            )
             url = response_data.get('pagination', {}).get('cursor')
             if url:
                 url = f'https://api.twitch.tv/helix/eventsub/subscriptions?after={url}'
@@ -42,37 +46,39 @@ def process_user_id_to_subscribe(user_ids):
     twitch_client_id = os.environ['CLIENT_ID']
     twitch_webhook_url = os.environ['TWITCH_WEBHOOK_URL']
     twitch_client_secret = os.environ['CLIENT_SECRET']
+    event_types = ["stream.online", "stream.offline"]
 
     for user_id in user_ids:
-        headers = {
-            'Authorization': f'Bearer {get_twitch_oauth_token()}',
-            'Client-Id': twitch_client_id,
-        }
-    
-        payload = {
-            "type": "stream.online",
-            "version": "1",
-            "condition": {
-                "broadcaster_user_id": user_id
-            },
-            "transport": {
-                "method": "webhook",
-                "callback": twitch_webhook_url,
-                "secret": twitch_client_secret
+        for event_type in event_types:
+            headers = {
+                'Authorization': f'Bearer {get_twitch_oauth_token()}',
+                'Client-Id': twitch_client_id,
             }
-        }
 
-        try:
-            response = requests.post('https://api.twitch.tv/helix/eventsub/subscriptions', headers=headers, json=payload)
-            response.raise_for_status()
-            print(f"Successfully subscribed to user {user_id}")
-        
-        except requests.exceptions.HTTPError as http_err:
-            print(f"HTTP error occurred: {http_err}")
-        except requests.exceptions.RequestException as req_err:
-            print(f"Request error occurred: {req_err}")
-        except Exception as err:
-            print(f"An unexpected error occurred: {err}")
+            payload = {
+                "type": event_type,
+                "version": "1",
+                "condition": {
+                    "broadcaster_user_id": user_id
+                },
+                "transport": {
+                    "method": "webhook",
+                    "callback": twitch_webhook_url,
+                    "secret": twitch_client_secret
+                }
+            }
+
+            try:
+                response = requests.post('https://api.twitch.tv/helix/eventsub/subscriptions', headers=headers, json=payload)
+                response.raise_for_status()
+                print(f"Successfully subscribed to {event_type} for user {user_id}")
+                time.sleep(10)
+            except requests.exceptions.HTTPError as http_err:
+                print(f"HTTP error occurred: {http_err}")
+            except requests.exceptions.RequestException as req_err:
+                print(f"Request error occurred: {req_err}")
+            except Exception as err:
+                print(f"An unexpected error occurred: {err}")
              
 def subscribe_to_twitch_streamers():
     twitch_client_id = os.environ['CLIENT_ID']
@@ -98,7 +104,6 @@ def subscribe_to_twitch_streamers():
                 response_data = response.json()
                 existing_subscriber_user_ids = set(subscribed_streamers)
                 user_ids = [user['id'] for user in response_data['data'] if user['id'] not in existing_subscriber_user_ids]
-                
                 if len(user_ids) > 0:
                     process_user_id_to_subscribe(user_ids)
 
