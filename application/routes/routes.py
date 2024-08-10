@@ -238,8 +238,8 @@ def webhook_callback():
             return Response(request.json['challenge'], content_type='text/plain', status=200)
         if event_type == "notification":
             broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
-            stream_online = request.json['subscription']['type']
-            if len(broadcaster_id) > 0 and stream_online == "stream.online":
+            subscription_type = request.json['subscription']['type']
+            if len(broadcaster_id) > 0:
                 api_endpoint = f"https://api.twitch.tv/helix/users?id={broadcaster_id}"
                 headers = {
                     'Authorization': f'Bearer {get_twitch_oauth_token()}',
@@ -251,13 +251,20 @@ def webhook_callback():
                     response_data = response.json()
                     display_name = response_data['data'][0]['display_name']
                     if len(display_name) > 0:
-                        day_of_week, current_time = get_day_and_time()
-                        append_to_csv(display_name, day_of_week, current_time)
-                        db_user = database.get_user_by_twitch_channel(display_name)
-                        if db_user:
-                            user_id = db_user['id']
-                            db_ref = db.reference(f'users/{user_id}')
-                            db_ref.update({'displayHome': True})
+                        if subscription_type == "stream.online":
+                            day_of_week, current_time = get_day_and_time()
+                            append_to_csv(display_name, day_of_week, current_time)
+                            db_user = database.get_user_by_twitch_channel(display_name)
+                            if db_user:
+                                user_id = db_user['id']
+                                db_ref = db.reference(f'users/{user_id}')
+                                db_ref.update({'displayHome': True})
+                        elif subscription_type == "stream.offline":
+                            db_user = database.get_user_by_twitch_channel(display_name)
+                            if db_user:
+                                user_id = db_user['id']
+                                db_ref = db.reference(f'users/{user_id}')
+                                db_ref.update({'displayHome': False})
                 except requests.exceptions.HTTPError as http_err:
                     return f"HTTP error occurred: {http_err}"
                 except Exception as err:
