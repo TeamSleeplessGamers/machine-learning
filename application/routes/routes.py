@@ -205,6 +205,7 @@ def append_to_csv(display_name, day, time):
 
 @routes_bp.route('/webhooks/callback', methods=['POST'])
 def webhook_callback():
+    print("start calling function")
     twitch_client_id = os.environ['CLIENT_ID']
     twitch_client_secret = os.environ['CLIENT_SECRET']
     headers = request.headers
