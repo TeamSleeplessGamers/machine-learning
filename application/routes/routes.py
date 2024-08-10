@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, Response
 import pandas as pd
 import time
 from ..services.twitch_recorder import TwitchRecorder
@@ -205,17 +205,16 @@ def append_to_csv(display_name, day, time):
 
 @routes_bp.route('/webhooks/callback', methods=['POST'])
 def webhook_callback():
-    print("start calling function")
     twitch_client_id = os.environ['CLIENT_ID']
     twitch_client_secret = os.environ['CLIENT_SECRET']
     headers = request.headers
     body = request.get_data(as_text=True)
-    
+    MESSAGE_TYPE_VERIFICATION = 'webhook_callback_verification'
+
     signature = headers.get('Twitch-Eventsub-Message-Signature')
     timestamp = headers.get('Twitch-Eventsub-Message-Timestamp')
     event_type = headers.get('Twitch-Eventsub-Message-Type')
 
-    print(signature, "sginatue and timesamp", timestamp)
     if signature and timestamp:
         message = headers.get('Twitch-Eventsub-Message-Id') + timestamp + body
         expected_signature = 'sha256=' + hmac.new(
@@ -225,8 +224,9 @@ def webhook_callback():
         ).hexdigest()
         
         if not hmac.compare_digest(expected_signature, signature):
-            print("Signature verification failed")
             return 'Signature verification failed', 403
+        if MESSAGE_TYPE_VERIFICATION == event_type:
+            return Response(request.json['challenge'], content_type='text/plain', status=200)
         if event_type == "notification":
             broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
             stream_online = request.json['subscription']['type']
