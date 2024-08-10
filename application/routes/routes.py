@@ -5,6 +5,7 @@ from ..services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
 import pytesseract
 import os
+from firebase_admin import db
 import cv2
 import hashlib
 import pytz
@@ -249,14 +250,18 @@ def webhook_callback():
                     response.raise_for_status()         
                     response_data = response.json()
                     display_name = response_data['data'][0]['display_name']
-                    
                     if len(display_name) > 0:
                         day_of_week, current_time = get_day_and_time()
                         append_to_csv(display_name, day_of_week, current_time)
+                        db_user = database.get_user_by_twitch_channel(display_name)
+                        if db_user:
+                            user_id = db_user['id']
+                            db_ref = db.reference(f'users/{user_id}')
+                            db_ref.update({'displayHome': True})
                 except requests.exceptions.HTTPError as http_err:
-                    print(f"HTTP error occurred: {http_err}")
+                    return f"HTTP error occurred: {http_err}"
                 except Exception as err:
-                    print(f"Other error occurred: {err}")
+                    return f"Other error occurred: {err}"
     return '', 204
 
 @routes_bp.route('/match_template_spectating/<string:event_id>', methods=['POST'])
