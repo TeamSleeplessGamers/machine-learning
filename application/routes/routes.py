@@ -7,6 +7,7 @@ import pytesseract
 import os
 import cv2
 import hashlib
+import pytz
 import hmac
 import logging
 from ..utils.heatmap_generator import generate_heatmap
@@ -193,13 +194,20 @@ def check_user_online(user_login):
         return {'status': 'offline'}
 
 def get_day_and_time():
-    now = datetime.now()
-    day_of_week = now.strftime("%A")
-    current_hour = now.hour
+    est = pytz.timezone('America/New_York')
+    
+    now_utc = datetime.now(pytz.utc)
+    now_est = now_utc.astimezone(est)
+    
+    day_of_week = now_est.strftime("%A")
+    current_hour = now_est.hour
+    
     return day_of_week, current_hour
 
 def append_to_csv(display_name, day, time):
-    with open('warzone-streamer.csv', mode='a', newline='') as file:
+    base_path = os.path.dirname(__file__)  
+    csv_path = os.path.join(base_path, '..', '..', 'warzone-streamer.csv')
+    with open(csv_path, mode='a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow([display_name, day, time])
 
@@ -225,7 +233,7 @@ def webhook_callback():
         
         if not hmac.compare_digest(expected_signature, signature):
             return 'Signature verification failed', 403
-        if MESSAGE_TYPE_VERIFICATION == event_type:
+        if event_type == MESSAGE_TYPE_VERIFICATION:
             return Response(request.json['challenge'], content_type='text/plain', status=200)
         if event_type == "notification":
             broadcaster_id = request.json['subscription']['condition']['broadcaster_user_id']
