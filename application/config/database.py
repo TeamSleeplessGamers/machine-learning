@@ -46,7 +46,7 @@ class Database:
 
         try:
             with self.conn.cursor() as cursor:
-                query = "SELECT * FROM users WHERE twitch_profile IS NOT NULL AND twitch_profile = %s"
+                query = "SELECT * FROM users WHERE twitch_profile IS NOT NULL AND LOWER(twitch_profile) = LOWER(%s)"
                 cursor.execute(query, (twitch_profile,))
                 user = cursor.fetchone()
                 return user
