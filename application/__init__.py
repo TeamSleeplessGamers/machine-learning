@@ -1,7 +1,8 @@
 from flask import Flask
 from flask_cors import CORS
 from .config.firebase import initialize_firebase
-import numpy as np
+import pytesseract
+
 from .routes.routes import routes_bp
 import cv2
 
@@ -26,18 +27,24 @@ def create_app():
         color_frame = cv2.cvtColor(thresh_frame, cv2.COLOR_GRAY2BGR)
         
         rectangles = [
-            (1798, 45, 60, 30),
+            (1798, 50, 60, 30),
             (25, 300, 50,50),
         ]
         output_dir = '/Users/trell/Projects/machine-learning/frames_processed'
 
         for i, (x, y, w, h) in enumerate(rectangles):
-            roi = color_frame[y:y + h, x:x + w]
-            
-            output_path = f'{output_dir}/extracted_region_{i + 1}.jpg'
-            cv2.imwrite(output_path, roi)
-            print(f"Extracted region saved to {output_path}")
+            custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
+            roi_frame = color_frame[y:y + h, x:x + w]
 
+            scale_factor = 2
+            rescaled_roi = cv2.resize(roi_frame, (w * scale_factor, h * scale_factor), interpolation=cv2.INTER_LINEAR)
+
+            rgb_roi_frame = cv2.cvtColor(rescaled_roi, cv2.COLOR_BGR2RGB)
+            output_path = f'{output_dir}/extracted_region_{i + 1}.jpg'
+            cv2.imwrite(output_path, rgb_roi_frame)
+
+            extracted_text = pytesseract.image_to_string(rgb_roi_frame, config=custom_config)
+            print(f"Extracted text from region {i + 1}: {extracted_text.strip()}")
 
         for (x, y, w, h) in rectangles:
             img_with_box = cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
