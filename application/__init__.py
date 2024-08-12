@@ -15,7 +15,7 @@ def create_app():
 
     try:
         initialize_firebase()
-        image_path = '/Users/trell/Projects/machine-learning/frames/output_gray_frame_2400.jpg'
+        image_path = '/Users/trell/Projects/machine-learning/frames/output_gray_frame_1200.jpg'
         frame = cv2.imread(image_path)
         
         if frame is None:
