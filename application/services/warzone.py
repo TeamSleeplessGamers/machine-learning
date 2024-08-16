@@ -46,12 +46,21 @@ def process_frame(frame, event_id, user_id, frame_count):
     global frame_buffer
 
     try:
-        # Note: Gray Frame Here does a great job of Getting When circle closes
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', gray_frame)
     except cv2.error as e:
         logging.error(f"Error processing frame: {e}")
         
+    rectangles = [
+        (1798, 50, 60, 30),
+        (25, 300, 50, 50),
+    ]
+    output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
+    custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
+
+    process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_config)
+    
+    print("frsme count", frame_count)
     height, width = gray_frame.shape
     new_width = int(width * 2)
     new_height = int(height * 2)
@@ -87,6 +96,35 @@ def frame_worker(frame_queue, event_id, user_id):
             continue
     logging.info("Frame worker exiting")
 
+def process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_config=None):
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    thresh_frame = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+    color_frame = cv2.cvtColor(thresh_frame, cv2.COLOR_GRAY2BGR)
+
+    extracted_texts = []
+    for i, (x, y, w, h) in enumerate(rectangles):
+        roi_frame = color_frame[y:y + h, x:x + w]
+
+        scale_factor = 2
+        rescaled_roi = cv2.resize(roi_frame, (w * scale_factor, h * scale_factor), interpolation=cv2.INTER_LINEAR)
+
+        rgb_roi_frame = cv2.cvtColor(rescaled_roi, cv2.COLOR_BGR2RGB)
+        output_path = f'{output_dir}/extracted_region_{i + 1}.jpg'
+        cv2.imwrite(output_path, rgb_roi_frame)
+
+        if not custom_config:
+            custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
+        extracted_text = pytesseract.image_to_string(rgb_roi_frame, config=custom_config).strip()
+        extracted_texts.append(extracted_text)
+        print(f"Extracted text from region {i + 1}: {extracted_text}")
+
+    for (x, y, w, h) in rectangles:
+        img_with_box = cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    
+    processed_image_path = f'{output_dir}/processed_gray_frame_{frame_count}.jpg'
+    cv2.imwrite(processed_image_path, img_with_box)
+    
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
