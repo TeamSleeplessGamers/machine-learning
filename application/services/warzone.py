@@ -2,6 +2,7 @@ import cv2
 import pytesseract
 import time
 import logging
+import re
 from fuzzywuzzy import process
 from firebase_admin import db
 from collections import deque
@@ -11,7 +12,8 @@ from queue import Empty
 logging.basicConfig(level=logging.INFO)
 
 # Global frame buffer
-frame_buffer = deque(maxlen=30)
+start_frame_buffer = deque(maxlen=30)
+spectating_frame_buffer = deque(maxlen=30)
 
 def analyze_buffer(buffer, threshold=5):
     non_zero_count = sum(1 for value in buffer if value > 0)
@@ -42,48 +44,73 @@ def match_text_with_known_words(text, known_words):
             matched_words.append(word)
     return ' '.join(matched_words)
 
+def process_frame_for_detection(detected_text, frame_buffer, known_words, threshold=5):
+    detection_count = 0
+
+    pattern = re.compile(r'\b(?:' + '|'.join(map(re.escape, known_words)) + r')\b', re.IGNORECASE)
+    if pattern.search(detected_text):
+        detection_count = 1
+    else:
+        corrected_text = match_text_with_known_words(detected_text, known_words)
+        if corrected_text:
+            detection_count = 1
+        else:
+            detection_count = 0
+    frame_buffer.append(detection_count)
+    pattern_found = analyze_buffer(frame_buffer, threshold)
+    return pattern_found
+
+def handle_match_state(frame):
+    detected_text = pytesseract.image_to_string(frame)
+    pattern_found = process_frame_for_detection(detected_text, start_frame_buffer, ["Entering the Warzone"], 0)
+    return pattern_found
+
 def process_frame(frame, event_id, user_id, frame_count):
-    global frame_buffer
+    rectangles = [
+        (1798, 50, 60, 30),
+        (25, 300, 50, 50),
+    ]
+    test_image_path = '/Users/trell/Projects/machine-learning/frames/start_test_frame.jpg'
+    test_image = cv2.imread(test_image_path)
+
+    if test_image is None:
+        print(f"Error: Could not open or find the image at {test_image_path}")
+    
+    test_gray_frame = cv2.cvtColor(test_image, cv2.COLOR_BGR2GRAY)
 
     try:
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', gray_frame)
     except cv2.error as e:
         logging.error(f"Error processing frame: {e}")
-        
-    rectangles = [
-        (1798, 50, 60, 30),
-        (25, 300, 50, 50),
-    ]
-    output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
-    custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
-
-    process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_config)
-    
-    print("frsme count", frame_count)
+      
     height, width = gray_frame.shape
     new_width = int(width * 2)
     new_height = int(height * 2)
     resized_frame = cv2.resize(gray_frame, (new_width, new_height))
     frame_invert = cv2.bitwise_not(resized_frame)
     frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
-    custom_config = r'--oem 3 --psm 6'
+    custom_config = r'--oem 3 --psm 6 -l eng'
     detected_text = pytesseract.image_to_string(frame_scale_abs, config=custom_config)
 
-    detection_count = 0
-    if "spectating".lower() in detected_text.lower():
-        detection_count += 1
-    else:
-        known_words = ["SPECTATING"]
-        corrected_text = match_text_with_known_words(detected_text, known_words)
-        if corrected_text:
-            detection_count += 1
-        detection_count = 0 
-    frame_buffer.append(detection_count)
+    output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
+    custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
+
+    match_state = handle_match_state(gray_frame)
     
-    pattern_found = analyze_buffer(frame_buffer)
-    update_firebase(user_id, event_id, pattern_found)
-    return detection_count
+    if match_state == 'start_match':
+        print("Processing start match...")
+    elif match_state == 'ad_displaying':
+        print("Processing ad displaying...")        
+    elif match_state == 'in_match':
+        process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_config)
+    elif match_state == 'end_match':
+        print("Processing end match...")
+    else:
+        raise ValueError(f"Unknown match state: {match_state}")
+        
+    spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
+    update_firebase(user_id, event_id, spectating_pattern_found)
 
 def frame_worker(frame_queue, event_id, user_id):
     while True:
