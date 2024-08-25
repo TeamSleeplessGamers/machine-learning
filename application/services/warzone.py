@@ -2,9 +2,11 @@ import cv2
 import pytesseract
 import time
 import logging
+import os
 import re
 from fuzzywuzzy import process
 from firebase_admin import db
+import numpy as np
 from collections import deque
 from multiprocessing import Process, Manager, Queue
 from queue import Empty
@@ -16,8 +18,10 @@ start_frame_buffer = deque(maxlen=30)
 spectating_frame_buffer = deque(maxlen=30)
 
 def analyze_buffer(buffer, threshold=5):
+    if not buffer:
+        return False
     non_zero_count = sum(1 for value in buffer if value > 0)
-    return non_zero_count >= threshold
+    return non_zero_count > threshold
 
 def update_firebase(user_id, event_id, is_spectating, max_retries=3):
     path = f'event-{event_id}/{user_id}'
@@ -56,6 +60,7 @@ def process_frame_for_detection(detected_text, frame_buffer, known_words, thresh
             detection_count = 1
         else:
             detection_count = 0
+          
     frame_buffer.append(detection_count)
     pattern_found = analyze_buffer(frame_buffer, threshold)
     return pattern_found
@@ -63,21 +68,12 @@ def process_frame_for_detection(detected_text, frame_buffer, known_words, thresh
 def handle_match_state(frame):
     detected_text = pytesseract.image_to_string(frame)
     pattern_found = process_frame_for_detection(detected_text, start_frame_buffer, ["Entering the Warzone"], 0)
-    return pattern_found
+    
+    if pattern_found:
+        return "start_match"
+    return "in_match"
 
 def process_frame(frame, event_id, user_id, frame_count):
-    rectangles = [
-        (1798, 50, 60, 30),
-        (25, 300, 50, 50),
-    ]
-    test_image_path = '/Users/trell/Projects/machine-learning/frames/start_test_frame.jpg'
-    test_image = cv2.imread(test_image_path)
-
-    if test_image is None:
-        print(f"Error: Could not open or find the image at {test_image_path}")
-    
-    test_gray_frame = cv2.cvtColor(test_image, cv2.COLOR_BGR2GRAY)
-
     try:
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', gray_frame)
@@ -96,6 +92,52 @@ def process_frame(frame, event_id, user_id, frame_count):
     output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
     custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
 
+    _, thresh = cv2.threshold(gray_frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    connectivity = 8
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh , connectivity , cv2.CV_32S)
+
+    min_area = 10 
+    max_area = 2000
+    second_min_area = 50
+    second_max_area = 140
+    target_warzone_circle_centroid = (151, 371)
+    target_warzone_kill_centroid = (1735, 120)
+
+    for i in range(1, num_labels):
+        x, y, w, h, area = stats[i]
+        cx, cy = centroids[i]
+
+        # CutOut For Warzone2 Resurgance circle closing
+        if min_area <= area <= max_area:
+            distance_to_target = np.sqrt((cx - target_warzone_circle_centroid[0])**2 + (cy - target_warzone_circle_centroid[1])**2)
+            if distance_to_target < 10:    
+                roi = gray_frame[y:y+h, x:x+w]        
+                _, roi_bin = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                roi_resized = cv2.resize(roi_bin, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+                
+                custom_config = r'--psm 8 --oem 3 -c tessedit_char_whitelist=0123456789'
+                extracted_text = pytesseract.image_to_string(roi_resized, config=custom_config).strip()  
+        # CutOut For Warzone2 Kills
+        if second_min_area <= area <= second_max_area:
+            distance_to_target_2 = np.sqrt((cx - target_warzone_kill_centroid[0])**2 + (cy - target_warzone_kill_centroid[1])**2)
+            if distance_to_target_2 < 10:  
+                padding = 10
+                padded_x = x - padding
+                padded_y = y - padding
+                padded_w = w + 2 * padding
+                padded_h = h + 2 * padding
+                
+                # Ensure the rectangle stays within the image boundaries
+                padded_x = max(padded_x, 0)
+                padded_y = max(padded_y, 0)
+                padded_w = min(padded_x + padded_w, gray_frame.shape[1]) - padded_x
+                padded_h = min(padded_y + padded_h, gray_frame.shape[0]) - padded_y
+                
+                cv2.rectangle(gray_frame, (padded_x, padded_y), (padded_x + padded_w, padded_y + padded_h), (0, 255, 0), 2)
+                cv2.putText(gray_frame, f'Object {i}', (padded_x, padded_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                output_filename = os.path.join(output_dir, f"object_{i}_at_{x}_{y}.png")
+                cv2.imwrite(output_filename, gray_frame)
+    
     match_state = handle_match_state(gray_frame)
     
     if match_state == 'start_match':
@@ -103,14 +145,16 @@ def process_frame(frame, event_id, user_id, frame_count):
     elif match_state == 'ad_displaying':
         print("Processing ad displaying...")        
     elif match_state == 'in_match':
-        process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_config)
+        print("Processing in match...")
+        # process_and_extract_text(frame, output_dir, frame_count, custom_config)
     elif match_state == 'end_match':
         print("Processing end match...")
     else:
         raise ValueError(f"Unknown match state: {match_state}")
-        
-    spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
-    update_firebase(user_id, event_id, spectating_pattern_found)
+      
+    #### REFACTOR THIS FUNCTION LATER####  
+    # spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
+    # update_firebase(user_id, event_id, spectating_pattern_found)
 
 def frame_worker(frame_queue, event_id, user_id):
     while True:
@@ -121,9 +165,16 @@ def frame_worker(frame_queue, event_id, user_id):
             process_frame(frame, event_id, user_id, frame_count)
         except Empty:
             continue
+        finally:
+            logging.info("Frame worker exiting")
     logging.info("Frame worker exiting")
 
-def process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_config=None):
+def process_and_extract_text(frame, output_dir, frame_count, custom_config=None):
+    rectangles = [
+        (1798, 50, 60, 30),
+        (43, 305, 22, 24),
+        ]
+
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     thresh_frame = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -137,8 +188,6 @@ def process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_
         rescaled_roi = cv2.resize(roi_frame, (w * scale_factor, h * scale_factor), interpolation=cv2.INTER_LINEAR)
 
         rgb_roi_frame = cv2.cvtColor(rescaled_roi, cv2.COLOR_BGR2RGB)
-        output_path = f'{output_dir}/extracted_region_{i + 1}.jpg'
-        cv2.imwrite(output_path, rgb_roi_frame)
 
         if not custom_config:
             custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
@@ -146,12 +195,9 @@ def process_and_extract_text(frame, rectangles, output_dir, frame_count, custom_
         extracted_texts.append(extracted_text)
         print(f"Extracted text from region {i + 1}: {extracted_text}")
 
-    for (x, y, w, h) in rectangles:
-        img_with_box = cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-    
-    processed_image_path = f'{output_dir}/processed_gray_frame_{frame_count}.jpg'
-    cv2.imwrite(processed_image_path, img_with_box)
-    
+    #for (x, y, w, h) in rectangles:
+    #    img_with_box = cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
