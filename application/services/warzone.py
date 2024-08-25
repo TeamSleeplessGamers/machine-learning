@@ -76,14 +76,13 @@ def handle_match_state(frame):
 def process_frame(frame, event_id, user_id, frame_count):
     try:
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', gray_frame)
+        new_width = 1800
+        new_height = 700
+        resized_frame = cv2.resize(gray_frame, (new_width, new_height))
+        cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', resized_frame)
     except cv2.error as e:
         logging.error(f"Error processing frame: {e}")
-      
-    height, width = gray_frame.shape
-    new_width = int(width * 2)
-    new_height = int(height * 2)
-    resized_frame = cv2.resize(gray_frame, (new_width, new_height))
+    
     frame_invert = cv2.bitwise_not(resized_frame)
     frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
     custom_config = r'--oem 3 --psm 6 -l eng'
@@ -92,7 +91,7 @@ def process_frame(frame, event_id, user_id, frame_count):
     output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
     custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
 
-    _, thresh = cv2.threshold(gray_frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    _, thresh = cv2.threshold(resized_frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     connectivity = 8
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh , connectivity , cv2.CV_32S)
 
@@ -101,7 +100,7 @@ def process_frame(frame, event_id, user_id, frame_count):
     second_min_area = 50
     second_max_area = 140
     target_warzone_circle_centroid = (151, 371)
-    target_warzone_kill_centroid = (1735, 120)
+    target_warzone_kill_centroid = (1700, 115)
 
     for i in range(1, num_labels):
         x, y, w, h, area = stats[i]
@@ -120,14 +119,14 @@ def process_frame(frame, event_id, user_id, frame_count):
         # CutOut For Warzone2 Kills
         if second_min_area <= area <= second_max_area:
             distance_to_target_2 = np.sqrt((cx - target_warzone_kill_centroid[0])**2 + (cy - target_warzone_kill_centroid[1])**2)
-            if distance_to_target_2 < 10:  
+            if distance_to_target_2 < 70:  
+                print("object", i, "what is distance", distance_to_target_2)
                 padding = 10
                 padded_x = x - padding
                 padded_y = y - padding
                 padded_w = w + 2 * padding
                 padded_h = h + 2 * padding
                 
-                # Ensure the rectangle stays within the image boundaries
                 padded_x = max(padded_x, 0)
                 padded_y = max(padded_y, 0)
                 padded_w = min(padded_x + padded_w, gray_frame.shape[1]) - padded_x
