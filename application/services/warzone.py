@@ -74,15 +74,60 @@ def handle_match_state(frame):
     return "in_match"
 
 def process_frame(frame, event_id, user_id, frame_count):
-    try:
-        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        new_width = 1800
-        new_height = 700
-        resized_frame = cv2.resize(gray_frame, (new_width, new_height))
-        cv2.imwrite(f'/Users/trell/Projects/machine-learning/frames/output_gray_frame_{frame_count}.jpg', resized_frame)
-    except cv2.error as e:
-        logging.error(f"Error processing frame: {e}")
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    width = 1800
+    height = 700
+    resized_frame = cv2.resize(gray_frame, (width, height))
+    corner_size = 300
+    _, original_width = gray_frame.shape
+    top_right_corner = gray_frame[
+        0:corner_size,
+        max(0, original_width - corner_size):original_width
+    ]
+    resized_corner = cv2.resize(top_right_corner, (width, height))
+
+    if len(resized_corner.shape) == 3 and resized_corner.shape[2] == 3:
+        resized_corner = cv2.cvtColor(resized_corner, cv2.COLOR_BGR2GRAY)
+    _, thresh_2 = cv2.threshold(resized_corner,127,255, cv2.THRESH_TOZERO)
+    template = cv2.imread('./game_templates/warzone/interest_4.jpg', cv2.IMREAD_COLOR)
     
+    if template is None:
+        print("Error: Template image not found.")
+    else:
+        if len(template.shape) == 3 and template.shape[2] == 3:
+            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        methods = [
+            cv2.TM_CCOEFF,
+            cv2.TM_CCOEFF_NORMED,
+            cv2.TM_CCORR,
+            cv2.TM_CCORR_NORMED,
+            cv2.TM_SQDIFF,
+            cv2.TM_SQDIFF_NORMED
+        ]
+
+        for method in methods:
+            result = cv2.matchTemplate(thresh_2, template, method)
+            
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            
+            if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
+                top_left = min_loc
+            else:
+                top_left = max_loc
+            
+            bottom_right = (top_left[0] + template.shape[1], top_left[1] + template.shape[0])
+            
+            matched_image = cv2.cvtColor(resized_corner, cv2.COLOR_GRAY2BGR)
+            cv2.rectangle(matched_image, top_left, bottom_right, (0, 255, 0), 2)
+            output_dir = '/Users/trell/Projects/machine-learning/frames_processed'
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Define the full output file path, including the file name and extension
+            output_filename = os.path.join(output_dir, "object_.png")
+
+            # Save the image
+            cv2.imwrite(output_filename, gray_frame)
+            
     frame_invert = cv2.bitwise_not(resized_frame)
     frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
     custom_config = r'--oem 3 --psm 6 -l eng'
@@ -91,16 +136,16 @@ def process_frame(frame, event_id, user_id, frame_count):
     output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
     custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
 
-    _, thresh = cv2.threshold(resized_frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    connectivity = 8
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh , connectivity , cv2.CV_32S)
+    _, thresh = cv2.threshold(resized_frame,128, 255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    connectivity = 4
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh, connectivity, cv2.CV_32S, ltype=cv2.CV_32S)
 
     min_area = 10 
     max_area = 2000
     second_min_area = 50
     second_max_area = 140
     target_warzone_circle_centroid = (151, 371)
-    target_warzone_kill_centroid = (1700, 115)
+    target_warzone_kill_centroid = (1840, 115)
 
     for i in range(1, num_labels):
         x, y, w, h, area = stats[i]
@@ -119,8 +164,8 @@ def process_frame(frame, event_id, user_id, frame_count):
         # CutOut For Warzone2 Kills
         if second_min_area <= area <= second_max_area:
             distance_to_target_2 = np.sqrt((cx - target_warzone_kill_centroid[0])**2 + (cy - target_warzone_kill_centroid[1])**2)
-            if distance_to_target_2 < 70:  
-                print("object", i, "what is distance", distance_to_target_2)
+            if distance_to_target_2 < 100: 
+                print("object", i, "what is distance", distance_to_target_2) 
                 padding = 10
                 padded_x = x - padding
                 padded_y = y - padding
@@ -220,7 +265,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
                 break
 
             frame_count += 1
-            if frame_count % 300 == 0:
+            if frame_count % 100 == 0:
                 if not frame_queue.full():
                     frame_queue.put((frame, frame_count))
                 else:
