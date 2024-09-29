@@ -6,12 +6,17 @@ import os
 import re
 from fuzzywuzzy import process
 from firebase_admin import db
+import tensorflow as tf
 import numpy as np
 from collections import deque
 from multiprocessing import Process, Manager, Queue
 from queue import Empty
 
 logging.basicConfig(level=logging.INFO)
+os.environ["KERAS_BACKEND"] = "jax"
+
+# Load the saved model
+model = tf.keras.models.load_model('mnist_model.h5')
 
 # Global frame buffer
 start_frame_buffer = deque(maxlen=30)
@@ -74,10 +79,37 @@ def handle_match_state(frame):
     return "in_match"
 
 def process_frame(frame, event_id, user_id, frame_count):
+     # Check the dimensions of the frame
+    frame_height, frame_width = frame.shape[:2]
+    expected_width = 1920  # Replace with the expected width
+    expected_height = 1080  # Replace with the expected height
+
+    if frame_width != expected_width or frame_height != expected_height:
+        print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
+        return  # Skip processing if the size is unexpected
+
+    top_left = (1712, 100)
+    bottom_right = (1760, 150)
+    roi = frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
+    
+    roi_resized = cv2.resize(roi, (28, 28))  # Resize to match CNN input
+    roi_gray = cv2.cvtColor(roi_resized, cv2.COLOR_BGR2GRAY)
+    roi_normalized = roi_gray / 255.0  # Normalize pixel values to [0, 1]
+    roi_normalized = roi_normalized.reshape(1, 28, 28, 1)  # Reshape for the CNN
+
+    # Predict the digit(s)
+    prediction = model.predict(roi_normalized)
+    predicted_digit = np.argmax(prediction, axis=1)[0]
+    
+    print(f"Predicted digit: {predicted_digit}")
+
+    output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
+    output_filename = f"{output_dir}/shortcut_processed_frame_{frame_count}.jpg"
+    cv2.imwrite(output_filename, roi)
+    
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     width = 1800
     height = 700
-    resized_frame = cv2.resize(gray_frame, (width, height))
     corner_size = 300
     _, original_width = gray_frame.shape
     top_right_corner = gray_frame[
@@ -89,46 +121,8 @@ def process_frame(frame, event_id, user_id, frame_count):
     if len(resized_corner.shape) == 3 and resized_corner.shape[2] == 3:
         resized_corner = cv2.cvtColor(resized_corner, cv2.COLOR_BGR2GRAY)
     _, thresh_2 = cv2.threshold(resized_corner,127,255, cv2.THRESH_TOZERO)
-    template = cv2.imread('./game_templates/warzone/interest_4.jpg', cv2.IMREAD_COLOR)
-    
-    if template is None:
-        print("Error: Template image not found.")
-    else:
-        if len(template.shape) == 3 and template.shape[2] == 3:
-            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-        methods = [
-            cv2.TM_CCOEFF,
-            cv2.TM_CCOEFF_NORMED,
-            cv2.TM_CCORR,
-            cv2.TM_CCORR_NORMED,
-            cv2.TM_SQDIFF,
-            cv2.TM_SQDIFF_NORMED
-        ]
-
-        for method in methods:
-            result = cv2.matchTemplate(thresh_2, template, method)
             
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-            
-            if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
-                top_left = min_loc
-            else:
-                top_left = max_loc
-            
-            bottom_right = (top_left[0] + template.shape[1], top_left[1] + template.shape[0])
-            
-            matched_image = cv2.cvtColor(resized_corner, cv2.COLOR_GRAY2BGR)
-            cv2.rectangle(matched_image, top_left, bottom_right, (0, 255, 0), 2)
-            output_dir = '/Users/trell/Projects/machine-learning/frames_processed'
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Define the full output file path, including the file name and extension
-            output_filename = os.path.join(output_dir, "object_.png")
-
-            # Save the image
-            cv2.imwrite(output_filename, gray_frame)
-            
-    frame_invert = cv2.bitwise_not(resized_frame)
+    frame_invert = cv2.bitwise_not(gray_frame)
     frame_scale_abs = cv2.convertScaleAbs(frame_invert, alpha=1.0, beta=0)
     custom_config = r'--oem 3 --psm 6 -l eng'
     detected_text = pytesseract.image_to_string(frame_scale_abs, config=custom_config)
@@ -136,7 +130,7 @@ def process_frame(frame, event_id, user_id, frame_count):
     output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
     custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
 
-    _, thresh = cv2.threshold(resized_frame,128, 255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    _, thresh = cv2.threshold(gray_frame,128, 255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     connectivity = 4
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh, connectivity, cv2.CV_32S, ltype=cv2.CV_32S)
 
