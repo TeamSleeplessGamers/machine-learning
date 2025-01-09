@@ -302,16 +302,43 @@ def match_template_spectating_route(event_id):
 @routes_bp.route('/read-image', methods=['POST'])
 def read_image():
     """
-    Endpoint to detect text from a hardcoded image file path.
+    Endpoint to detect text from all images in a hardcoded folder path.
     """
-    # Hardcoded image path
-    image_path = "/Users/trell/Projects/machine-learning/game_templates/warzone/shortcut_processed_frame_500.jpg"  # Update this path accordingly
+    # Hardcoded folder path containing images
+    folder_path = "/Users/trell/Projects/machine-learning/images"  # Update this path accordingly
 
     try:
-        # Call the Vision API
-        detected_texts = detect_text_with_api_key(image_path)
+        # Ensure the folder exists
+        if not os.path.exists(folder_path):
+            return jsonify({"error": "Folder does not exist"}), 400
 
-        return jsonify({"detected_texts": detected_texts}), 200
+        # Initialize the result list
+        results = []
+
+        # Loop through all files in the folder
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+
+            # Check if the file is an image (filter by extension)
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                try:
+                    # Detect text in the image
+                    detected_texts = detect_text_with_api_key(file_path)
+
+                    # Append the result
+                    results.append({
+                        "image_name": filename,
+                        "detected_texts": detected_texts
+                    })
+                except Exception as e:
+                    # Handle individual file errors gracefully
+                    results.append({
+                        "image_name": filename,
+                        "error": str(e)
+                    })
+
+        # Return the results as JSON
+        return jsonify(results), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
