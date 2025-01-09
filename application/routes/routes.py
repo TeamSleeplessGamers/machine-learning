@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from ..services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
+from ..services.machine_learning import detect_text_with_api_key
 import pytesseract
 import os
 from firebase_admin import db
@@ -298,6 +299,22 @@ def match_template_spectating_route(event_id):
         'details': status
     })
     
+@routes_bp.route('/read-image', methods=['POST'])
+def read_image():
+    """
+    Endpoint to detect text from a hardcoded image file path.
+    """
+    # Hardcoded image path
+    image_path = "/Users/trell/Projects/machine-learning/game_templates/warzone/shortcut_processed_frame_500.jpg"  # Update this path accordingly
+
+    try:
+        # Call the Vision API
+        detected_texts = detect_text_with_api_key(image_path)
+
+        return jsonify({"detected_texts": detected_texts}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
     base_path = os.path.dirname(__file__)  

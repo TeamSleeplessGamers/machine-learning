@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 os.environ["KERAS_BACKEND"] = "jax"
 
 # Load the saved model
-model = tf.keras.models.load_model('mnist_model.h5')
+model = "" #tf.keras.models.load_model('mnist_model.h5')
 
 # Global frame buffer
 start_frame_buffer = deque(maxlen=30)
