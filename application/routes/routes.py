@@ -299,49 +299,6 @@ def match_template_spectating_route(event_id):
         'details': status
     })
     
-@routes_bp.route('/read-image', methods=['POST'])
-def read_image():
-    """
-    Endpoint to detect text from all images in a hardcoded folder path.
-    """
-    # Hardcoded folder path containing images
-    folder_path = "/Users/trell/Projects/machine-learning/images"  # Update this path accordingly
-
-    try:
-        # Ensure the folder exists
-        if not os.path.exists(folder_path):
-            return jsonify({"error": "Folder does not exist"}), 400
-
-        # Initialize the result list
-        results = []
-
-        # Loop through all files in the folder
-        for filename in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, filename)
-
-            # Check if the file is an image (filter by extension)
-            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
-                try:
-                    # Detect text in the image
-                    detected_texts = detect_text_with_api_key(file_path)
-
-                    # Append the result
-                    results.append({
-                        "image_name": filename,
-                        "detected_texts": detected_texts
-                    })
-                except Exception as e:
-                    # Handle individual file errors gracefully
-                    results.append({
-                        "image_name": filename,
-                        "error": str(e)
-                    })
-
-        # Return the results as JSON
-        return jsonify(results), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
     base_path = os.path.dirname(__file__)  

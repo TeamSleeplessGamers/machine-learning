@@ -1,16 +1,15 @@
 import requests
 import base64
-import os
+import cv2
 
 # Replace with your Google Cloud Vision API key
 
-def detect_text_with_api_key(image_path):
+def detect_text_with_api_key(roi):
     """
-    Detects text in an image using the Google Cloud Vision API and API Key.
+    Detects text in an ROI (Region of Interest) using the Google Cloud Vision API.
 
     Args:
-        image_path (str): Path to the image file.
-        api_key (str): Your Google Cloud Vision API Key.
+        roi (np.ndarray): The ROI (image portion) as a NumPy array.
 
     Returns:
         list: A list of detected text strings.
@@ -20,9 +19,13 @@ def detect_text_with_api_key(image_path):
     # Google Cloud Vision API endpoint
     url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
 
-    # Read and encode the image
-    with open(image_path, "rb") as image_file:
-        content = base64.b64encode(image_file.read()).decode("utf-8")
+    # Encode the ROI into a PNG image
+    success, encoded_image = cv2.imencode('.png', roi)
+    if not success:
+        raise Exception("Failed to encode ROI as an image")
+
+    # Base64 encode the image
+    content = base64.b64encode(encoded_image).decode("utf-8")
 
     # Prepare the request payload
     payload = {
