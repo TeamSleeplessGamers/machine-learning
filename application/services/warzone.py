@@ -210,7 +210,7 @@ def process_top_right_corner(frame, frame_count,
     """
     try:
         height, width, _ = frame.shape  # Get frame dimensions
-        corner_size = min(height, width) // 16  # Set corner size as a fraction of the smaller dimension
+        corner_size = min(height, width) // 13  # Set corner size as a fraction of the smaller dimension
 
         start_y = 0  # Start from the top
         start_x = width - corner_size  # Start from the right
@@ -220,13 +220,15 @@ def process_top_right_corner(frame, frame_count,
         # Resize the selected corner region
         resized_corner = cv2.resize(top_right_corner, (width, height))
 
-        # Call Vision API with ROI
-        # detected_texts = detect_text_with_api_key(resized_corner)
-        # print(f"Detected Texts (Frame {frame_count}): {detected_texts}")
         output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
         output_filename = f"{output_dir}/new_processed_frame_{frame_count}.jpg"
+        output_filename_2 = f"{output_dir}/new_processed_frame_2{frame_count}.jpg"
         cv2.imwrite(output_filename, resized_corner)
+        cv2.imwrite(output_filename_2, frame)
 
+        # Call Vision API with ROI
+        detected_texts = detect_text_with_api_key(resized_corner)
+        print(f"Detected Texts (Frame {frame_count}): {detected_texts}")
         return ""
 
     except Exception as e:
