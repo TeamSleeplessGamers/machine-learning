@@ -189,6 +189,17 @@ def frame_worker(frame_queue, event_id, user_id):
             logging.info("Frame worker exiting")
     logging.info("Frame worker exiting")
 
+def get_second_valid_number(detected_texts):
+    if len(detected_texts) < 2:  # Ensure there are at least two elements
+        return None
+
+    second_value = detected_texts[1]  # Get the second value
+
+    if second_value.isdigit():  # Check if it's a valid number
+        return int(second_value)  # Convert to integer
+
+    return None  # Return None if not a valid number
+
 def process_top_right_corner(frame, frame_count, 
                              start_y=0, start_x=0, corner_size=200,
                              width=1800, height=400):
@@ -220,14 +231,17 @@ def process_top_right_corner(frame, frame_count,
         # Resize the selected corner region
         resized_corner = cv2.resize(top_right_corner, (width, height))
 
-        output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
-        output_filename = f"{output_dir}/new_processed_frame_{frame_count}.jpg"
-        output_filename_2 = f"{output_dir}/new_processed_frame_2{frame_count}.jpg"
-        cv2.imwrite(output_filename, resized_corner)
-        cv2.imwrite(output_filename_2, frame)
+        #### TODO - Piece of code to help debug the frame cut out.
+        #### This is to wirte the image to a folder in project.
+        #output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
+        #output_filename = f"{output_dir}/new_processed_frame_{frame_count}.jpg"
+        #output_filename_2 = f"{output_dir}/new_processed_frame_2{frame_count}.jpg"
+        #cv2.imwrite(output_filename, resized_corner)
+        #cv2.imwrite(output_filename_2, frame)
 
         # Call Vision API with ROI
         detected_texts = detect_text_with_api_key(resized_corner)
+        second_number = get_second_valid_number(detected_texts)
         print(f"Detected Texts (Frame {frame_count}): {detected_texts}")
         return ""
 
