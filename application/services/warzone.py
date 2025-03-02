@@ -6,11 +6,12 @@ import os
 import re
 from fuzzywuzzy import process
 from firebase_admin import db
+import tensorflow as tf
 import numpy as np
 from collections import deque
 from multiprocessing import Process, Manager, Queue
-from ..services.machine_learning import detect_text_with_api_key
 from queue import Empty
+from ..services.machine_learning import detect_text_with_api_key
 
 logging.basicConfig(level=logging.INFO)
 os.environ["KERAS_BACKEND"] = "jax"
@@ -85,24 +86,19 @@ def process_frame(frame, event_id, user_id, frame_count):
         print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
         return  # Skip processing if the size is unexpected
 
-    top_left = (1812, 100)
-    bottom_right = (1860, 150)
+    top_left = (1712, 100)
+    bottom_right = (1760, 150)
     roi = frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
     
     roi_resized = cv2.resize(roi, (28, 28))  # Resize to match CNN input
     roi_gray = cv2.cvtColor(roi_resized, cv2.COLOR_BGR2GRAY)
     roi_normalized = roi_gray / 255.0  # Normalize pixel values to [0, 1]
     roi_normalized = roi_normalized.reshape(1, 28, 28, 1)  # Reshape for the CNN
-
-
-    output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
-    output_filename = f"{output_dir}/shortcut_processed_frame_{frame_count}.jpg"
-    cv2.imwrite(output_filename, roi)
-    
+        
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     width = 1800
     height = 700
-    corner_size = 800
+    corner_size = 300
     _, original_width = gray_frame.shape
     top_right_corner = gray_frame[
         0:corner_size,
@@ -131,7 +127,7 @@ def process_frame(frame, event_id, user_id, frame_count):
     second_min_area = 50
     second_max_area = 140
     target_warzone_circle_centroid = (151, 371)
-    target_warzone_kill_centroid = (1940, 115)
+    target_warzone_kill_centroid = (1840, 115)
 
     for i in range(1, num_labels):
         x, y, w, h, area = stats[i]
@@ -161,31 +157,20 @@ def process_frame(frame, event_id, user_id, frame_count):
                 padded_x = max(padded_x, 0)
                 padded_y = max(padded_y, 0)
                 padded_w = min(padded_x + padded_w, gray_frame.shape[1]) - padded_x
-                padded_h = min(padded_y + padded_h, gray_frame.shape[0]) - padded_y
-                
-                cv2.rectangle(gray_frame, (padded_x, padded_y), (padded_x + padded_w, padded_y + padded_h), (0, 255, 0), 2)
-                cv2.putText(gray_frame, f'Object {i}', (padded_x, padded_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                output_filename = os.path.join(output_dir, f"object_{i}_at_{x}_{y}.png")
-                cv2.imwrite(output_filename, top_right_corner)
-    
+                padded_h = min(padded_y + padded_h, gray_frame.shape[0]) - padded_y    
     match_state = handle_match_state(gray_frame)
     
-    last_processed_time = time.time()
-
-    while True:
-        current_time = time.time()
-        if current_time - last_processed_time >= 1:
-            last_processed_time = current_time
-
-            if match_state == 'start_match':
-                print("Processing start match...")
-            elif match_state == 'ad_displaying':
-                print("Processing ad displaying...")
-            elif match_state == 'in_match':
-                print("Processing in match...")
-                process_top_right_corner(frame, frame_count, 10, 1840, 200, 1800, 700)
-            elif match_state == 'end_match':
-                print("Processing end match...")
+    if match_state == 'start_match':
+        print("Processing start match...")
+    elif match_state == 'ad_displaying':
+        print("Processing ad displaying...")        
+    elif match_state == 'in_match':
+        print("Processing in match...")
+        process_top_right_corner(frame, frame_count)    
+    elif match_state == 'end_match':
+        print("Processing end match...")
+    else:
+        raise ValueError(f"Unknown match state: {match_state}")
       
     #### REFACTOR THIS FUNCTION LATER####  
     # spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
@@ -205,7 +190,7 @@ def frame_worker(frame_queue, event_id, user_id):
     logging.info("Frame worker exiting")
 
 def process_top_right_corner(frame, frame_count, 
-                             start_y=150, start_x=1320, corner_size=200,
+                             start_y=0, start_x=0, corner_size=200,
                              width=1800, height=400):
     """
     Processes the top-right corner of a frame, resizes it, and detects text using a given text detection function.
@@ -224,18 +209,20 @@ def process_top_right_corner(frame, frame_count,
         list: Detected texts from the region of interest.
     """
     try:
-        # Define the slicing range based on the adjusted position
-        top_right_corner = frame[
-            start_y:start_y + corner_size,  # Adjusted vertical range
-            start_x:start_x + corner_size  # Adjusted horizontal range
-        ]
+        height, width, _ = frame.shape  # Get frame dimensions
+        corner_size = min(height, width) // 16  # Set corner size as a fraction of the smaller dimension
+
+        start_y = 0  # Start from the top
+        start_x = width - corner_size  # Start from the right
+
+        top_right_corner = frame[start_y:start_y + corner_size, start_x:width]
 
         # Resize the selected corner region
         resized_corner = cv2.resize(top_right_corner, (width, height))
 
         # Call Vision API with ROI
-        #detected_texts = detect_text_with_api_key(resized_corner)
-        #print(f"Detected Texts (Frame {frame_count}): {detected_texts}")
+        # detected_texts = detect_text_with_api_key(resized_corner)
+        # print(f"Detected Texts (Frame {frame_count}): {detected_texts}")
         output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
         output_filename = f"{output_dir}/new_processed_frame_{frame_count}.jpg"
         cv2.imwrite(output_filename, resized_corner)
@@ -246,38 +233,6 @@ def process_top_right_corner(frame, frame_count,
         print(f"Error detecting text in frame {frame_count}: {e}")
         return []
     
-def process_and_extract_text(frame, output_dir, frame_count, custom_config=None):
-    rectangles = [
-        (1200, 300, 1400, 1450),
-        (1400, 0, 1200, 1200),
-        ]
-
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    thresh_frame = cv2.threshold(gray_frame, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-    color_frame = cv2.cvtColor(thresh_frame, cv2.COLOR_GRAY2BGR)
-    
-    
-    for i, (x, y, w, h) in enumerate(rectangles):
-        roi_frame = color_frame[y:y + h, x:x + w]
-        test_roi_frame = frame[y:y + h, x:x + w]
-
-        
-        scale_factor = 2
-        rescaled_roi = cv2.resize(roi_frame, (w * scale_factor, h * scale_factor), interpolation=cv2.INTER_LINEAR)
-
-        rgb_roi_frame = cv2.cvtColor(rescaled_roi, cv2.COLOR_BGR2RGB)
-        output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
-        output_filename = f"{output_dir}/new_processed_frame_{frame_count}.jpg"
-        if not custom_config:
-            custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
-        extracted_text = pytesseract.image_to_string(rgb_roi_frame, config=custom_config).strip()
-        extracted_texts.append(extracted_text)
-        print(f"Extracted text from region {i + 1}: {extracted_text}")
-
-    #for (x, y, w, h) in rectangles:
-    #    img_with_box = cv2.rectangle(color_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
