@@ -38,6 +38,18 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
 
+def update_firebase_kills(user_id, event_id, match_count, kill_count, max_retries=3):
+    path = f'event-{event_id}/{user_id}'
+    db_ref = db.reference(path)
+    
+    for attempt in range(max_retries):
+        try:
+            db_ref.update({f'match_{match_count}_killCount': kill_count})
+            break
+        except Exception as e:
+            logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
+            time.sleep(2)
+            
 def match_text_with_known_words(text, known_words):
     matched_words = []
     words = text.split()
@@ -166,7 +178,7 @@ def process_frame(frame, event_id, user_id, frame_count):
         print("Processing ad displaying...")        
     elif match_state == 'in_match':
         print("Processing in match...")
-        process_top_right_corner(frame, frame_count)    
+        process_top_right_corner(event_id, user_id, match_count, frame, frame_count)    
     elif match_state == 'end_match':
         print("Processing end match...")
     else:
@@ -200,7 +212,7 @@ def get_second_valid_number(detected_texts):
 
     return None  # Return None if not a valid number
 
-def process_top_right_corner(frame, frame_count, 
+def process_top_right_corner(event_id, user_id, match_count, frame, frame_count, 
                              start_y=0, start_x=0, corner_size=200,
                              width=1800, height=400):
     """
@@ -242,6 +254,7 @@ def process_top_right_corner(frame, frame_count,
         # Call Vision API with ROI
         detected_texts = detect_text_with_api_key(resized_corner)
         second_number = get_second_valid_number(detected_texts)
+        update_firebase_kills(user_id, event_id, match_count, second_number)
         print(f"Detected Texts (Frame {frame_count}): {detected_texts}")
         return ""
 
