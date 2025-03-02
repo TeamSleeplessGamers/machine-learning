@@ -20,6 +20,11 @@ os.environ["KERAS_BACKEND"] = "jax"
 start_frame_buffer = deque(maxlen=30)
 spectating_frame_buffer = deque(maxlen=30)
 
+# Define multipliers
+TOP_5_MULTIPLIER = 1.25
+TOP_3_MULTIPLIER = 1.5
+VICTORY_MULTIPLIER = 2.0
+
 def analyze_buffer(buffer, threshold=5):
     if not buffer:
         return False
@@ -38,6 +43,22 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
 
+def calc_sg_score(kill_count, ranking):
+    """
+    Calculate the sgScore based on the ranking and kill count.
+    - Victory (Rank 1) → x2.0
+    - Top 3 (Ranks 2-3) → x1.5
+    - Top 5 (Ranks 4-5) → x1.25
+    - Otherwise → No multiplier
+    """
+    if ranking == 1:
+        return kill_count * VICTORY_MULTIPLIER
+    elif ranking in [2, 3]:
+        return kill_count * TOP_3_MULTIPLIER
+    elif ranking in [4, 5]:
+        return kill_count * TOP_5_MULTIPLIER
+    return kill_count  # No multiplier if ranking > 5
+
 def update_firebase_kills(user_id, event_id, match_count, kill_count, max_retries=3):
     path = f'event-{event_id}/{user_id}'
     db_ref = db.reference(path)
@@ -49,7 +70,60 @@ def update_firebase_kills(user_id, event_id, match_count, kill_count, max_retrie
         except Exception as e:
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
+ 
+def update_firebase_match_ranking(user_id, event_id, ranking, max_retries=3):
+    """
+    Update Firebase with the matchRanking array for a given match.
+    Fetches the current matchRanking array length before appending.
+    """
+    path = f'event-{event_id}/{user_id}/matchRanking'
+    db_ref = db.reference(path)
+
+    for attempt in range(max_retries):
+        try:
+            current_data = db_ref.get()  # Fetch current matchRanking array
             
+            if current_data is None:
+                current_data = []  # Initialize if empty
+            
+            current_length = len(current_data)  # Get current length of matchRanking array
+
+            if ranking not in current_data:  
+                current_data.append(ranking)  # Append new ranking if not already present
+            
+            db_ref.set(current_data)  # Update Firebase with new array
+            
+            # Fetch the killCount from Firebase
+            kill_count_path = f'event-{event_id}/{user_id}/match_{current_length}_killCount'
+            kill_count_ref = db.reference(kill_count_path)
+            kill_count = kill_count_ref.get()  # Get killCount value
+            
+            if kill_count is not None:
+                update_firebase_sg_score(user_id, event_id, current_length, kill_count, ranking)
+            else:
+                logging.warning(f"Kill count not found for user {user_id}, match {current_length}")
+
+            break
+        except Exception as e:
+            logging.error(f"Error updating Firebase matchRanking: {e}. Attempt {attempt + 1} of {max_retries}.")
+            time.sleep(2)
+                
+def update_firebase_sg_score(user_id, event_id, match_count, kill_count, ranking, max_retries=3):
+    """
+    Update Firebase with the sgScore for a given match.
+    """
+    sg_score = calc_sg_score(kill_count, ranking)  # Calculate sgScore based on ranking
+    path = f'event-{event_id}/{user_id}'
+    db_ref = db.reference(path)
+
+    for attempt in range(max_retries):
+        try:
+            db_ref.update({f'match_{match_count}_sgScore': sg_score})
+            break
+        except Exception as e:
+            logging.error(f"Error updating Firebase sgScore: {e}. Attempt {attempt + 1} of {max_retries}.")
+            time.sleep(2)
+                       
 def match_text_with_known_words(text, known_words):
     matched_words = []
     words = text.split()
