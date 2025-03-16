@@ -15,7 +15,7 @@ class Database:
                 cursor_factory=RealDictCursor
             )
         except Exception as e:
-            print(f"Error connecting to the database: {e}")
+            print(f"Errors connecting to the database: {e}")
             self.conn = None
 
     def get_connection(self):
