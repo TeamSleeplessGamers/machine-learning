@@ -87,7 +87,6 @@ def get_match_count(event_id, user_id):
         # Update Firebase with the new match_count
         db_ref.set(new_match_count)
 
-        print(f"Match count for user {user_id} in event {event_id} updated to {new_match_count}")
         return new_match_count
 
     except Exception as e:
@@ -134,49 +133,78 @@ def init_data(event_id, user_id, max_retries=3):
         except Exception as e:
             logging.error(f"Error initializing match data: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
-             
-def update_firebase_match_ranking_and_score(user_id, event_id, match_count, ranking, kill_count, max_retries=3):
+ 
+def update_firebase_match_ranking(user_id, event_id, match_count, ranking):
     """
-    Calculate the SG score, update Firebase with the ranking, kill count, and SG score for a given match.
-    All match data is stored within the matchHistory path for the user.
+    Update the ranking for a given match in Firebase without overwriting other fields.
     """
-    # Calculate SG score based on ranking and kill count, if both are available
-    sg_score = calc_sg_score(kill_count, ranking) if ranking is not None and kill_count is not None else None
-
-    # Define the Firebase path for match history
-    path = f'event-{event_id}/{user_id}/matchHistory'
-
+    # Define the Firebase path for match history, including match count and ranking
+    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}/ranking'
     db_ref = db.reference(path)
 
-    for attempt in range(max_retries):
+    for attempt in range(3):  # Handling retries internally
         try:
-            # Fetch current match history object from Firebase
-            current_data = db_ref.get()
-
-            if current_data is None:
-                current_data = {}  # Initialize if empty
-
-            # Prepare match data to be updated, only including available values
-            match_data = {}
+            # Prepare match data to update ranking
             if ranking is not None:
-                match_data['ranking'] = float(ranking)
-            if kill_count is not None:
-                match_data['killCount'] = float(kill_count)
-            if sg_score is not None:
-                match_data['sgScore'] = float(sg_score)
-
-            # Update or create a new match entry with available data
-            current_data[f'match_{match_count}'] = match_data
-
-            # Update the Firebase with the new match data
-            db_ref.set(current_data)
+                db_ref.set(float(ranking))  # Set the ranking at the specific path
 
             break  # Exit the loop if the operation is successful
 
         except Exception as e:
-            logging.error(f"Error updating Firebase matchRanking and sgScore: {e}. Attempt {attempt + 1} of {max_retries}.")
-            time.sleep(2)
+            logging.error(f"Error updating Firebase match ranking: {e}. Attempt {attempt + 1}.")
+            time.sleep(2)  # Wait before retrying
+            
+def update_firebase_match_kill_count(user_id, event_id, match_count, kill_count):
+    """
+    Update the kill count for a given match in Firebase without overwriting other fields.
+    """
+    # Define the Firebase path for match history, including match count and kill count
+    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}/killCount'
+    db_ref = db.reference(path)
 
+    for attempt in range(3):  # Handling retries internally
+        try:
+            # Prepare match data to update kill count
+            if kill_count is not None:
+                db_ref.set(float(kill_count))  # Set the kill count at the specific path
+
+            break  # Exit the loop if the operation is successful
+
+        except Exception as e:
+            logging.error(f"Error updating Firebase match kill count: {e}. Attempt {attempt + 1}.")
+            time.sleep(2)  # Wait before retrying
+
+def update_firebase_match_ranking_and_score(user_id, event_id, match_count, ranking, kill_count):
+    """
+    Calculate the SG score and update Firebase with the ranking, kill count, and SG score for a given match.
+    Calls separate functions to update ranking and kill count individually.
+    """
+    # Calculate SG score based on ranking and kill count, if both are available
+    sg_score = calc_sg_score(kill_count, ranking) if ranking is not None and kill_count is not None else None
+
+    # Update ranking if available
+    if ranking is not None:
+        update_firebase_match_ranking(user_id, event_id, match_count, ranking)
+
+    # Update kill count if available
+    if kill_count is not None:
+        update_firebase_match_kill_count(user_id, event_id, match_count, kill_count)
+
+    # Define the Firebase path for match history, including match count and sgScore
+    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}/sgScore'
+    db_ref = db.reference(path)
+
+    for attempt in range(3):  # Handling retries internally
+        try:
+            # Prepare match data to update sgScore
+            if sg_score is not None:
+                db_ref.set(float(sg_score))  # Set the sgScore at the specific path
+
+            break  # Exit the loop if the operation is successful
+
+        except Exception as e:
+            logging.error(f"Error updating Firebase match sgScore: {e}. Attempt {attempt + 1}.")
+            time.sleep(2)  # Wait before retrying
                 
 def match_text_with_known_words(text, known_words):
     matched_words = []
@@ -228,7 +256,6 @@ def handle_match_state(frame, user_id, event_id):
                 placement = flattened_data[i - 1].upper()
                 if placement in placement_map:
                     placement_value = placement_map[placement]  # Store placement number
-                    print("Placement Number:", placement_value)
                     break
     
     # Check if the flattened data contains "ENTERING THE WARZONE"
@@ -344,11 +371,8 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
                 combined_results[cls] = detected_text
 
                 # Debugging: Save the image
-                output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
-                cv2.imwrite(output_filename, image)
-                
-                print(f"Saved detected image for Class {cls} | Frame: {frame_count} | Score1: {score1}, Score2: {score2}")
-                print(f"Detected text results for Class {cls} Frame: {frame_count}: {results}")
+                #output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
+                #cv2.imwrite(output_filename, image)  
             else:
                 print(f"No valid detection for Class {cls} | Score1: {score1}, Score2: {score2}")
         
