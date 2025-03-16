@@ -248,6 +248,10 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
 
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     cv2.imwrite(f"/Users/trell/Projects/machine-learning/frames/debug_frame_{frame_count}.jpg", gray_frame)  
+    #### REFACTOR THIS FUNCTION LATER####  
+    detected_text = pytesseract.image_to_string(frame)
+    spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
+    update_firebase(user_id, event_id, spectating_pattern_found)
     match_state = handle_match_state(gray_frame, user_id, event_id)
     
     if match_state == 'start_match':
@@ -269,62 +273,6 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
             match_count_updated.value == 1
     else:
         raise ValueError(f"Unknown match state: {match_state}")
-      
-      
-    width = 1800
-    height = 700
-    corner_size = 300
-    _, original_width = gray_frame.shape
-    top_right_corner = gray_frame[
-        0:corner_size,
-        max(0, original_width - corner_size):original_width
-    ]
-    resized_corner = cv2.resize(top_right_corner, (width, height))
-
-    if len(resized_corner.shape) == 3 and resized_corner.shape[2] == 3:
-        resized_corner = cv2.cvtColor(resized_corner, cv2.COLOR_BGR2GRAY)
-        custom_config = r'--oem 3 --psm 6 -l eng'
-
-    custom_config = r'--psm 7 --oem 3 -c tessedit_char_whitelist=0123456789IO'
-
-    _, thresh = cv2.threshold(gray_frame,128, 255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
-    connectivity = 4
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(thresh, connectivity, cv2.CV_32S, ltype=cv2.CV_32S)
-
-    min_area = 10 
-    max_area = 2000
-    second_min_area = 50
-    second_max_area = 140
-    target_warzone_circle_centroid = (151, 371)
-    target_warzone_kill_centroid = (1840, 115)
-
-    for i in range(1, num_labels):
-        x, y, w, h, area = stats[i]
-        cx, cy = centroids[i]
-
-        # CutOut For Warzone2 Resurgence circle closing
-        if min_area <= area <= max_area:
-            distance_to_target = np.sqrt((cx - target_warzone_circle_centroid[0])**2 + (cy - target_warzone_circle_centroid[1])**2)
-            if distance_to_target < 10:                    
-                custom_config = r'--psm 8 --oem 3 -c tessedit_char_whitelist=0123456789'
-        # CutOut For Warzone2 Kills
-        if second_min_area <= area <= second_max_area:
-            distance_to_target_2 = np.sqrt((cx - target_warzone_kill_centroid[0])**2 + (cy - target_warzone_kill_centroid[1])**2)
-            if distance_to_target_2 < 100: 
-                padding = 10
-                padded_x = x - padding
-                padded_y = y - padding
-                padded_w = w + 2 * padding
-                padded_h = h + 2 * padding
-                
-                padded_x = max(padded_x, 0)
-                padded_y = max(padded_y, 0)
-                padded_w = min(padded_x + padded_w, gray_frame.shape[1]) - padded_x
-                padded_h = min(padded_y + padded_h, gray_frame.shape[0]) - padded_y    
-    #### REFACTOR THIS FUNCTION LATER####  
-    detected_text = reader.readtext(frame)
-    spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
-    update_firebase(user_id, event_id, spectating_pattern_found)
 
 def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated):
     start_time = time.time()  # Start total timer
