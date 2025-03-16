@@ -10,12 +10,14 @@ import tensorflow as tf
 import numpy as np
 from collections import deque
 from multiprocessing import Process, Manager, Queue
+import easyocr
 from queue import Empty
 from ..services.machine_learning import detect_text_with_api_key
 from ..utils.delivery import process_video
 
 logging.basicConfig(level=logging.INFO)
 os.environ["KERAS_BACKEND"] = "jax"
+reader = easyocr.Reader(['en'])
 
 # Global frame buffer
 start_frame_buffer = deque(maxlen=30)
@@ -230,6 +232,8 @@ def handle_match_state(frame, user_id, event_id):
     return "in_match"
 
 def process_frame(frame, event_id, user_id, frame_count):
+    global MATCH_COUNT_UPDATED, MATCH_COUNT
+    
      # Check the dimensions of the frame
     frame_height, frame_width = frame.shape[:2]
     expected_width = 1920  # Replace with the expected width
@@ -251,6 +255,7 @@ def process_frame(frame, event_id, user_id, frame_count):
     elif match_state == 'in_match':
         print(f"Processing in match for user {user_id} in event {event_id}...")
         MATCH_COUNT_UPDATED = False
+        print("What is match count", MATCH_COUNT)
         process_frame_scores(event_id, user_id, MATCH_COUNT, frame, frame_count)    
     elif match_state == 'end_match':
         print(f"Processing end match for user {user_id} in event {event_id}...")
@@ -299,13 +304,8 @@ def process_frame(frame, event_id, user_id, frame_count):
         # CutOut For Warzone2 Resurgence circle closing
         if min_area <= area <= max_area:
             distance_to_target = np.sqrt((cx - target_warzone_circle_centroid[0])**2 + (cy - target_warzone_circle_centroid[1])**2)
-            if distance_to_target < 10:    
-                roi = gray_frame[y:y+h, x:x+w]        
-                _, roi_bin = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                roi_resized = cv2.resize(roi_bin, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-                
+            if distance_to_target < 10:                    
                 custom_config = r'--psm 8 --oem 3 -c tessedit_char_whitelist=0123456789'
-                extracted_text = pytesseract.image_to_string(roi_resized, config=custom_config).strip()  
         # CutOut For Warzone2 Kills
         if second_min_area <= area <= second_max_area:
             distance_to_target_2 = np.sqrt((cx - target_warzone_kill_centroid[0])**2 + (cy - target_warzone_kill_centroid[1])**2)
@@ -321,8 +321,9 @@ def process_frame(frame, event_id, user_id, frame_count):
                 padded_w = min(padded_x + padded_w, gray_frame.shape[1]) - padded_x
                 padded_h = min(padded_y + padded_h, gray_frame.shape[0]) - padded_y    
     #### REFACTOR THIS FUNCTION LATER####  
-    # spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
-    # update_firebase(user_id, event_id, spectating_pattern_found)
+    detected_text = reader.readtext(spectating_frame_buffer)
+    spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
+    update_firebase(user_id, event_id, spectating_pattern_found)
 
 def frame_worker(frame_queue, event_id, user_id):
     start_time = time.time()  # Start total timer
@@ -431,6 +432,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         return []
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
+    global MATCH_COUNT
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -440,6 +442,8 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         frame_queue = Queue(maxsize=10)
         num_workers = 4
         workers = []
+        
+        MATCH_COUNT = get_match_count(event_id, user_id)
         
         for _ in range(num_workers):
             p = Process(target=frame_worker, args=(frame_queue, event_id, user_id))
