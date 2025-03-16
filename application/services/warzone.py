@@ -209,10 +209,6 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
     if frame_width != expected_width or frame_height != expected_height:
         print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
         return
-
-    output_dir = f'/Users/trell/Projects/machine-learning-2/frames_processed'
-    output_filename = f"{output_dir}/new_processed_frame_2{frame_count}.jpg"
-    cv2.imwrite(output_filename, frame)
             
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
  
@@ -283,20 +279,26 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         list: Detected texts from the region of interest.
     """
     try:
+        #### TODO - New Delivery.Py file using model lets try this
+        selected_contrast_images, score1, score2 = process_video(frame)
+        update_firebase_match_ranking_and_score(user_id, event_id, match_count, score1, score2)
+        
         #### TODO - Piece of code to help debug the frame cut out.
         #### This is to write the image to a folder in project.
-        output_dir = f'/Users/trell/Projects/machine-learning/frames_processed'
-        output_filename = f"{output_dir}/new_processed_frame_2{frame_count}.jpg"
-
-        #### TODO - New Delivery.Py file using model lets try this
-        frame_rgb, score1, score2 = process_video(frame)
-        update_firebase_match_ranking_and_score(user_id, event_id, match_count, score1, score2)
-        cv2.imwrite(output_filename, frame_rgb)
-        return ""
-
+        output_dir = f'/Users/trell/Projects/machine-learning-2/frames_processed'
+        
+        for cls, image in selected_contrast_images.items():
+            if image is not None and image.size > 0:
+                output_filename = f"{output_dir}/processed_frame_{frame_count}_class_{cls}.jpg"
+                results = detect_text_with_api_key(image)
+                cv2.imwrite(output_filename, image)
+                print(f"Saved detected image for Class {cls} | Frame: {frame_count} | Score1: {score1}, Score2: {score2}")
+                print(f"Detected text results for ${cls} Frame: {frame_count}: {results}")
+            else:
+                print(f"No valid detection for Class {cls} | Score1: {score1}, Score2: {score2}")
+                cv2.imwrite(output_filename, selected_contrast_images)
     except Exception as e:
         print(f"Error detecting text in frame {frame_count}: {e}")
-        return []
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     with Manager() as manager:

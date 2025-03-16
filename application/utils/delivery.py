@@ -123,13 +123,6 @@ def save_scores_to_csv():
     if not scores_data:
         print("No scores to save.")
         return
-    # Generate a unique filename using the start time
-    filename = start_time.strftime("scores_data/scores_%Y%m%d_%H%M%S.csv")
-    with open(filename, mode="w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Timestep", "Score 1", "Score 2"])  # Write header
-        writer.writerows(scores_data)  # Write scores data
-    print(f"Scores saved to {filename}")
 
 def restart_process():
     global video_path, cap, is_running, scores_data
@@ -165,6 +158,9 @@ def process_video(frame):
     extracted_scores = []
     class_detections = {}
 
+    selected_contrast_images = {}  # Store images for each class
+
+    # Step 1: Identify best detections per class
     for result in results:
         boxes = result.boxes
         for box in boxes:
@@ -175,6 +171,7 @@ def process_video(frame):
             if cls not in class_detections or conf > class_detections[cls]['conf']:
                 class_detections[cls] = {'conf': conf, 'box': (x1, y1, x2, y2)}
 
+    # Step 2: Process detected regions
     for cls, detection in class_detections.items():
         x1, y1, x2, y2 = detection['box']
         detected_region = frame[y1:y2, x1:x2]
@@ -184,14 +181,14 @@ def process_video(frame):
         resized_image = cv2.resize(bottom_half, None, fx=5, fy=5, interpolation=cv2.INTER_LINEAR)
 
         # Apply preprocessing for better OCR accuracy
-        contrast_img = enhance_contrast(resized_image)
-    
-        
-        ocr_result = reader.readtext(contrast_img, allowlist='0123456789', low_text=0.3, adjust_contrast=0.7)
+        selected_contrast_images[cls] = resized_image #enhance_contrast(resized_image)
 
+        # Extract text from the image
+        ocr_result = reader.readtext(selected_contrast_images[cls], allowlist='0123456789', low_text=0.3, adjust_contrast=0.7)
         detected_texts = [filter_score(text[1]) for text in ocr_result]
         extracted_scores.append((cls, detected_texts))
 
+    # Step 3: Determine final scores
     score1, score2 = prev_score1, prev_score2
 
     for cls, texts in extracted_scores:
@@ -201,18 +198,9 @@ def process_video(frame):
             score2 = texts[0]
 
     prev_score1, prev_score2 = score1, score2
-    score1_label.config(text=score1)
-    score2_label.config(text=score2)
 
+    # Step 4: Save timestamps for score changes
     timestep = datetime.now().strftime("%H:%M:%S")
     scores_data.append([timestep, score1, score2])
 
-    for cls, detection in class_detections.items():
-        x1, y1, x2, y2 = detection['box']
-        color = (0, 255, 0) if cls == 0 else (0, 0, 255)
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-
-    display_frame = cv2.resize(frame, (640, 480))
-    frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-    
-    return frame_rgb, score1, score2
+    return selected_contrast_images, score1, score2
