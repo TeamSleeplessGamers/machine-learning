@@ -231,8 +231,8 @@ def handle_match_state(frame, user_id, event_id):
     
     return "in_match"
 
-def process_frame(frame, event_id, user_id, frame_count):
-    global MATCH_COUNT_UPDATED, MATCH_COUNT
+def process_frame(frame, event_id, user_id, match_count, frame_count):
+    global MATCH_COUNT_UPDATED
     
      # Check the dimensions of the frame
     frame_height, frame_width = frame.shape[:2]
@@ -255,12 +255,13 @@ def process_frame(frame, event_id, user_id, frame_count):
     elif match_state == 'in_match':
         print(f"Processing in match for user {user_id} in event {event_id}...")
         MATCH_COUNT_UPDATED = False
-        print("What is match count", MATCH_COUNT)
-        process_frame_scores(event_id, user_id, MATCH_COUNT, frame, frame_count)    
+        print("What is match count", match_count)
+        process_frame_scores(event_id, user_id, match_count, frame, frame_count)    
     elif match_state == 'end_match':
         print(f"Processing end match for user {user_id} in event {event_id}...")
         update_match_count(event_id, user_id)
-        MATCH_COUNT = get_match_count(event_id, user_id)
+        match_count = get_match_count(event_id, user_id)
+        MATCH_COUNT = match_count
         if MATCH_COUNT is None:
             print("Error: Failed to fetch match count.")
             return
@@ -325,7 +326,7 @@ def process_frame(frame, event_id, user_id, frame_count):
     spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
     update_firebase(user_id, event_id, spectating_pattern_found)
 
-def frame_worker(frame_queue, event_id, user_id):
+def frame_worker(frame_queue, event_id, user_id, match_count):
     start_time = time.time()  # Start total timer
     frame_count = 0  # Track number of frames processed
 
@@ -337,7 +338,7 @@ def frame_worker(frame_queue, event_id, user_id):
                 break  # Stop processing
 
             logging.info(f"Processing frame {frame_count}")  # Debug log
-            process_frame(frame, event_id, user_id, frame_count)
+            process_frame(frame, event_id, user_id, match_count, frame_count)
 
         except Empty:
             logging.warning("Frame queue is empty. Waiting for frames...")
@@ -446,7 +447,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         MATCH_COUNT = get_match_count(event_id, user_id)
         
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id))
+            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, MATCH_COUNT))
             p.start()
             workers.append(p)
         
