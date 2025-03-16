@@ -2,32 +2,22 @@ import cv2
 import pytesseract
 import time
 import logging
-import os
 import re
 from fuzzywuzzy import process
 from firebase_admin import db
-import tensorflow as tf
-import numpy as np
 from collections import deque
 from multiprocessing import Process, Manager, Queue
-import easyocr
 from queue import Empty
 from ..services.machine_learning import detect_text_with_api_key
 from ..utils.delivery import process_video
+from ..utils.utils import calc_sg_score
 
 logging.basicConfig(level=logging.INFO)
-os.environ["KERAS_BACKEND"] = "jax"
-reader = easyocr.Reader(['en'])
 
 # Global frame buffer
 start_frame_buffer = deque(maxlen=30)
 end_frame_buffer = deque(maxlen=30)
 spectating_frame_buffer = deque(maxlen=30)
-
-# Define multipliers
-TOP_5_MULTIPLIER = 1.25
-TOP_3_MULTIPLIER = 1.5
-VICTORY_MULTIPLIER = 2.0
 
 def analyze_buffer(buffer, threshold=5):
     if not buffer:
@@ -46,30 +36,6 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
         except Exception as e:
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
-
-def calc_sg_score(kill_count, ranking):
-    """
-    Calculate the sgScore based on the ranking and kill count.
-    - Victory (Rank 1) → x2.0
-    - Top 3 (Ranks 2-3) → x1.5
-    - Top 5 (Ranks 4-5) → x1.25
-    - Otherwise → No multiplier
-    """
-    # Ensure ranking and kill count are valid numbers
-    ranking = float(ranking)
-    kill_count = float(kill_count)
-
-    print(f"Ranking: {ranking}, Kill Count: {kill_count}")  # Debug: print the values
-
-    if ranking == 1:
-        return kill_count * VICTORY_MULTIPLIER
-    elif 2 <= ranking <= 3:  # Equivalent to ranking in [2, 3]
-        return kill_count * TOP_3_MULTIPLIER
-    elif 4 <= ranking <= 5:  # Equivalent to ranking in [4, 5]
-        return kill_count * TOP_5_MULTIPLIER
-    else:
-        return kill_count  # No multiplier for ranks greater than 5
-
  
 def update_match_count(event_id, user_id):
     """
@@ -173,7 +139,7 @@ def match_text_with_known_words(text, known_words):
         if not word.isalnum() or len(word) < 3:
             continue
         
-        closest_match, score = process.extractOne(word, known_words)
+        _, score = process.extractOne(word, known_words)
         if score >= 70:
             matched_words.append(word)
     return ' '.join(matched_words)
@@ -236,22 +202,21 @@ def handle_match_state(frame, user_id, event_id):
     return "in_match"
 
 def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count):
-        
-     # Check the dimensions of the frame
     frame_height, frame_width = frame.shape[:2]
-    expected_width = 1920  # Replace with the expected width
-    expected_height = 1080  # Replace with the expected height
+    expected_width = 1920
+    expected_height = 1080
 
     if frame_width != expected_width or frame_height != expected_height:
         print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
-        return  # Skip processing if the size is unexpected
+        return
 
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    cv2.imwrite(f"/Users/trell/Projects/machine-learning/frames/debug_frame_{frame_count}.jpg", gray_frame)  
+ 
     #### REFACTOR THIS FUNCTION LATER####  
     detected_text = pytesseract.image_to_string(frame)
     spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
     update_firebase(user_id, event_id, spectating_pattern_found)
+   
     match_state = handle_match_state(gray_frame, user_id, event_id)
     
     if match_state == 'start_match':
@@ -275,81 +240,30 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         raise ValueError(f"Unknown match state: {match_state}")
 
 def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated):
-    start_time = time.time()  # Start total timer
-    frame_count = 0  # Track number of frames processed
+    start_time = time.time()
+    frame_count = 0
 
     while True:        
         try:
             frame, frame_count = frame_queue.get(timeout=5)
             if frame is None:
                 logging.info("Received termination signal (None). Exiting loop.")
-                break  # Stop processing
-
-            logging.info(f"Processing frame {frame_count}")  # Debug log
+                break
             process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count)
 
         except Empty:
             logging.warning("Frame queue is empty. Waiting for frames...")
-            continue  # Keep waiting if the queue is empty
+            continue
 
-    total_end_time = time.time()  # End total timer
+    total_end_time = time.time()
     total_elapsed_time = total_end_time - start_time
     logging.info(f"Total frames processed: {frame_count}")
     logging.info(f"Total execution time of frame_worker: {total_elapsed_time:.4f} seconds")
     logging.info("Frame worker exiting")
 
-def get_second_valid_number(detected_texts):
-    if len(detected_texts) < 2:  # Ensure there are at least two elements
-        return None
-
-    second_value = detected_texts[1]  # Get the second value
-
-    if second_value.isdigit():  # Check if it's a valid number
-        return int(second_value)  # Convert to integer
-
-    return None  # Return None if not a valid number
-
-def get_last_valid_number(detected_texts):
-    for item in reversed(detected_texts):  # Iterate from the last element to the first
-        if item.isdigit():  # Check if it's a valid number
-            return int(item)  # Convert to integer and return
-    return None  # Return None if no valid number is found
-
-
-def image_resize(image, width = None, height = None, inter = cv2.INTER_AREA):
-    # initialize the dimensions of the image to be resized and
-    # grab the image size
-    dim = None
-    (h, w) = image.shape[:2]
-
-    # if both the width and height are None, then return the
-    # original image
-    if width is None and height is None:
-        return image
-
-    # check to see if the width is None
-    if width is None:
-        # calculate the ratio of the height and construct the
-        # dimensions
-        r = height / float(h)
-        dim = (int(w * r), height)
-
-    # otherwise, the height is None
-    else:
-        # calculate the ratio of the width and construct the
-        # dimensions
-        r = width / float(w)
-        dim = (width, int(h * r))
-
-    # resize the image
-    resized = cv2.resize(image, dim, interpolation = inter)
-
-    # return the resized image
-    return resized
-
 def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     """
-    Procsesses the top-right corner of a frame, resizes it, and detects text using a given text detection function.
+    Processes the top-right corner of a frame, resizes it, and detects text using a given text detection function.
 
     Args:
         frame (numpy.ndarray): The input video frame.
@@ -391,7 +305,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         num_workers = 4
         workers = []
         
-        match_count = manager.Value('i', 0)  # Shared integer variable
+        match_count = manager.Value('i', 0)
         match_count_updated = manager.Value('i', 0)  # 0 = False, 1 = True
         
         for _ in range(num_workers):
@@ -416,7 +330,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         cv2.destroyAllWindows()
 
         for _ in range(num_workers):
-            frame_queue.put((None, None))  # Sentinel values to stop workers
+            frame_queue.put((None, None))
         
         for p in workers:
             p.join()
