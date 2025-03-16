@@ -231,9 +231,8 @@ def handle_match_state(frame, user_id, event_id):
     
     return "in_match"
 
-def process_frame(frame, event_id, user_id, match_count, frame_count):
-    global MATCH_COUNT_UPDATED
-    
+def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count):
+        
      # Check the dimensions of the frame
     frame_height, frame_width = frame.shape[:2]
     expected_width = 1920  # Replace with the expected width
@@ -247,15 +246,20 @@ def process_frame(frame, event_id, user_id, match_count, frame_count):
     cv2.imwrite(f"/Users/trell/Projects/machine-learning/frames/debug_frame_{frame_count}.jpg", gray_frame)  
     match_state = handle_match_state(gray_frame, user_id, event_id)
     
+    if MATCH_COUNT_UPDATED is None:
+        print("Error: Failed to fetch match count updated.")
+        return
+        
     if match_state == 'start_match':
         print(f"Processing start match for user {user_id} in event {event_id}...")
-        MATCH_COUNT_UPDATED = False
+        match_count_updated =  False
+        MATCH_COUNT_UPDATED = match_count_updated
     elif match_state == 'ad_displaying':
         print(f"Processing ad displaying for user {user_id} in event {event_id}...")      
     elif match_state == 'in_match':
         print(f"Processing in match for user {user_id} in event {event_id}...")
-        MATCH_COUNT_UPDATED = False
-        print("What is match count", match_count)
+        match_count_updated = False
+        MATCH_COUNT_UPDATED = match_count_updated
         process_frame_scores(event_id, user_id, match_count, frame, frame_count)    
     elif match_state == 'end_match':
         print(f"Processing end match for user {user_id} in event {event_id}...")
@@ -265,7 +269,8 @@ def process_frame(frame, event_id, user_id, match_count, frame_count):
         if MATCH_COUNT is None:
             print("Error: Failed to fetch match count.")
             return
-        MATCH_COUNT_UPDATED = True
+        match_count_updated = True
+        MATCH_COUNT_UPDATED = match_count_updated
         time.sleep(30)  # Wait for 30 seconds before exiting
     else:
         raise ValueError(f"Unknown match state: {match_state}")
@@ -322,11 +327,11 @@ def process_frame(frame, event_id, user_id, match_count, frame_count):
                 padded_w = min(padded_x + padded_w, gray_frame.shape[1]) - padded_x
                 padded_h = min(padded_y + padded_h, gray_frame.shape[0]) - padded_y    
     #### REFACTOR THIS FUNCTION LATER####  
-    detected_text = reader.readtext(spectating_frame_buffer)
+    detected_text = reader.readtext(frame)
     spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
     update_firebase(user_id, event_id, spectating_pattern_found)
 
-def frame_worker(frame_queue, event_id, user_id, match_count):
+def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated):
     start_time = time.time()  # Start total timer
     frame_count = 0  # Track number of frames processed
 
@@ -338,7 +343,7 @@ def frame_worker(frame_queue, event_id, user_id, match_count):
                 break  # Stop processing
 
             logging.info(f"Processing frame {frame_count}")  # Debug log
-            process_frame(frame, event_id, user_id, match_count, frame_count)
+            process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count)
 
         except Empty:
             logging.warning("Frame queue is empty. Waiting for frames...")
@@ -433,7 +438,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         return []
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
-    global MATCH_COUNT
+    global MATCH_COUNT, MATCH_COUNT_UPDATED
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -447,7 +452,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         MATCH_COUNT = get_match_count(event_id, user_id)
         
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, MATCH_COUNT))
+            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, MATCH_COUNT, MATCH_COUNT_UPDATED))
             p.start()
             workers.append(p)
         
