@@ -93,43 +93,90 @@ def get_match_count(event_id, user_id):
     except Exception as e:
         logging.error(f"Error fetching and updating match count for user {user_id} in event {event_id}: {e}")
         return None
+
+def init_data(event_id, user_id, max_retries=3):
+    """
+    Initialize match_0 data in Firebase for a given event and user with default values.
     
+    Args:
+        event_id (str): The event ID.
+        user_id (str): The user ID.
+        max_retries (int): The maximum number of retries if the operation fails.
+    """
+    # Default values for the first match entry
+    default_data = {
+        'ranking': 0,
+        'killCount': 0,
+        'sgScore': 0
+    }
+
+    # Define the Firebase path for match history
+    path = f'event-{event_id}/{user_id}/matchHistory'
+    
+    db_ref = db.reference(path)
+
+    for attempt in range(max_retries):
+        try:
+            # Fetch current match history object from Firebase
+            current_data = db_ref.get()
+
+            if current_data is None:
+                current_data = {}  # Initialize if empty
+
+            # Set initial match_0 data
+            current_data['match_0'] = default_data
+
+            # Update the Firebase with the new match data
+            db_ref.set(current_data)
+            print(f"Initialized match_0 data for {user_id} in event {event_id}")
+            break  # Exit the loop if the operation is successful
+
+        except Exception as e:
+            logging.error(f"Error initializing match data: {e}. Attempt {attempt + 1} of {max_retries}.")
+            time.sleep(2)
+             
 def update_firebase_match_ranking_and_score(user_id, event_id, match_count, ranking, kill_count, max_retries=3):
     """
     Calculate the SG score, update Firebase with the ranking, kill count, and SG score for a given match.
     All match data is stored within the matchHistory path for the user.
     """
-    # Calculate SG score based on ranking and kill count
-    sg_score = calc_sg_score(kill_count, ranking)
+    # Calculate SG score based on ranking and kill count, if both are available
+    sg_score = calc_sg_score(kill_count, ranking) if ranking is not None and kill_count is not None else None
 
     # Define the Firebase path for match history
     path = f'event-{event_id}/{user_id}/matchHistory'
 
     db_ref = db.reference(path)
-    
+
     for attempt in range(max_retries):
         try:
             # Fetch current match history object from Firebase
             current_data = db_ref.get()
-            
+
             if current_data is None:
                 current_data = {}  # Initialize if empty
 
-            # Update or create a new match entry with ranking, kill count, and SG score
-            current_data[f'match_{match_count}'] = {
-                'ranking': float(ranking),
-                'killCount': float(kill_count), 
-                'sgScore': float(sg_score)  # Include SG score for each match
-            }
+            # Prepare match data to be updated, only including available values
+            match_data = {}
+            if ranking is not None:
+                match_data['ranking'] = float(ranking)
+            if kill_count is not None:
+                match_data['killCount'] = float(kill_count)
+            if sg_score is not None:
+                match_data['sgScore'] = float(sg_score)
+
+            # Update or create a new match entry with available data
+            current_data[f'match_{match_count}'] = match_data
 
             # Update the Firebase with the new match data
             db_ref.set(current_data)
-            
+
             break  # Exit the loop if the operation is successful
 
         except Exception as e:
             logging.error(f"Error updating Firebase matchRanking and sgScore: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
+
                 
 def match_text_with_known_words(text, known_words):
     matched_words = []
@@ -268,39 +315,58 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     Args:
         frame (numpy.ndarray): The input video frame.
         frame_count (int): The frame number (used for logging).
-        detect_text_function (function): A function to detect text from a region.
-        start_y (int): Vertical position (top offset) for the region of interest.
-        start_x (int): Horizontal position (right offset) for the region of interest.
-        corner_size (int): Size of the square region to extract.
-        width (int): Width to resize the region.
-        height (int): Height to resize the region.
-
+        event_id (int): The event ID.
+        user_id (int): The user ID.
+        match_count (int): The match count.
+        
     Returns:
-        list: Detected texts from the region of interest.
+        None
     """
     try:
-        #### TODO - New Delivery.Py file using model lets try this
+        # Step 1: Get contrast images and scores from the video frame
         selected_contrast_images, score1, score2 = process_video(frame)
-        update_firebase_match_ranking_and_score(user_id, event_id, match_count, score1, score2)
         
-        #### TODO - Piece of code to help debug the frame cut out.
-        #### This is to write the image to a folder in project.
-        output_dir = f'/Users/trell/Projects/machine-learning-2/frames_processed'
+        # Initialize a dictionary to store the combined results
+        combined_results = {}
         
+        # Step 2: Process each detected class and image
         for cls, image in selected_contrast_images.items():
             if image is not None and image.size > 0:
-                output_filename = f"{output_dir}/processed_frame_{frame_count}_class_{cls}.jpg"
+                # Perform OCR and extract the first detected value
                 results = detect_text_with_api_key(image)
+                detected_text = results[0] if results else None  # Default to None if no text detected
+                
+                # Check if detected_text is a valid number
+                if detected_text is None or not detected_text.isdigit():
+                    detected_text = None  # Set to None if not a valid number
+                
+                # Add the result to the combined_results dictionary
+                combined_results[cls] = detected_text
+
+                # Debugging: Save the image
+                output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
                 cv2.imwrite(output_filename, image)
+                
                 print(f"Saved detected image for Class {cls} | Frame: {frame_count} | Score1: {score1}, Score2: {score2}")
-                print(f"Detected text results for ${cls} Frame: {frame_count}: {results}")
+                print(f"Detected text results for Class {cls} Frame: {frame_count}: {results}")
             else:
                 print(f"No valid detection for Class {cls} | Score1: {score1}, Score2: {score2}")
-                cv2.imwrite(output_filename, selected_contrast_images)
+        
+        # Step 3: Extract ranking from the combined results (using cls 0 as the ranking)
+        ranking = combined_results.get(0, None)  # Get ranking from class 0 or set to None if not present
+        kills_count = combined_results.get(1, None)  # Use class 1 for kills count or set to None if not present
+        
+        update_firebase_match_ranking_and_score(
+            user_id, event_id, match_count, ranking, kills_count
+        )
+        
     except Exception as e:
-        print(f"Error detecting text in frame {frame_count}: {e}")
+        print(f"Error processing frame {frame_count}: {e}")
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
+    # This is the initialization of data for the match template function
+    init_data(event_id, user_id)
+
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
