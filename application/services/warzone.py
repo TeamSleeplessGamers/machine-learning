@@ -210,6 +210,10 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
         return
 
+    output_dir = f'/Users/trell/Projects/machine-learning-2/frames_processed'
+    output_filename = f"{output_dir}/new_processed_frame_2{frame_count}.jpg"
+    cv2.imwrite(output_filename, frame)
+            
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
  
     #### REFACTOR THIS FUNCTION LATER####  
@@ -245,7 +249,7 @@ def frame_worker(frame_queue, event_id, user_id, match_count, match_count_update
 
     while True:        
         try:
-            frame, frame_count = frame_queue.get(timeout=5)
+            frame, frame_count = frame_queue.get()
             if frame is None:
                 logging.info("Received termination signal (None). Exiting loop.")
                 break
@@ -320,15 +324,14 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
                 break
 
             frame_count += 1
-            if frame_count % 300 == 0:
+            if frame_count % 90 == 0: # (FPS 30/s)
                 if not frame_queue.full():
                     frame_queue.put((frame, frame_count))
                 else:
                     logging.warning("Frame queue is full, skipping frame")
 
         cap.release()
-        cv2.destroyAllWindows()
-
+    
         for _ in range(num_workers):
             frame_queue.put((None, None))
         

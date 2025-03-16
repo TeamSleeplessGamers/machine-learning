@@ -16,8 +16,6 @@ def calc_sg_score(kill_count, ranking):
     ranking = float(ranking)
     kill_count = float(kill_count)
 
-    print(f"Ranking: {ranking}, Kill Count: {kill_count}")  # Debug: print the values
-
     if ranking == 1:
         return kill_count * VICTORY_MULTIPLIER
     elif 2 <= ranking <= 3:  # Equivalent to ranking in [2, 3]
