@@ -29,10 +29,6 @@ TOP_5_MULTIPLIER = 1.25
 TOP_3_MULTIPLIER = 1.5
 VICTORY_MULTIPLIER = 2.0
 
-# Global variable for match count
-MATCH_COUNT = 0
-MATCH_COUNT_UPDATED = False
-
 def analyze_buffer(buffer, threshold=5):
     if not buffer:
         return False
@@ -59,13 +55,21 @@ def calc_sg_score(kill_count, ranking):
     - Top 5 (Ranks 4-5) → x1.25
     - Otherwise → No multiplier
     """
+    # Ensure ranking and kill count are valid numbers
+    ranking = float(ranking)
+    kill_count = float(kill_count)
+
+    print(f"Ranking: {ranking}, Kill Count: {kill_count}")  # Debug: print the values
+
     if ranking == 1:
         return kill_count * VICTORY_MULTIPLIER
-    elif ranking in [2, 3]:
+    elif 2 <= ranking <= 3:  # Equivalent to ranking in [2, 3]
         return kill_count * TOP_3_MULTIPLIER
-    elif ranking in [4, 5]:
+    elif 4 <= ranking <= 5:  # Equivalent to ranking in [4, 5]
         return kill_count * TOP_5_MULTIPLIER
-    return kill_count  # No multiplier if ranking > 5
+    else:
+        return kill_count  # No multiplier for ranks greater than 5
+
  
 def update_match_count(event_id, user_id):
     """
@@ -246,32 +250,23 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
     cv2.imwrite(f"/Users/trell/Projects/machine-learning/frames/debug_frame_{frame_count}.jpg", gray_frame)  
     match_state = handle_match_state(gray_frame, user_id, event_id)
     
-    if MATCH_COUNT_UPDATED is None:
-        print("Error: Failed to fetch match count updated.")
-        return
-        
     if match_state == 'start_match':
         print(f"Processing start match for user {user_id} in event {event_id}...")
-        match_count_updated =  False
-        MATCH_COUNT_UPDATED = match_count_updated
+        if match_count_updated.value == 1:
+            match_count_updated.value == 0
     elif match_state == 'ad_displaying':
         print(f"Processing ad displaying for user {user_id} in event {event_id}...")      
     elif match_state == 'in_match':
         print(f"Processing in match for user {user_id} in event {event_id}...")
-        match_count_updated = False
-        MATCH_COUNT_UPDATED = match_count_updated
-        process_frame_scores(event_id, user_id, match_count, frame, frame_count)    
+        if match_count_updated.value == 1:
+            match_count_updated.value == 0
+        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count)    
     elif match_state == 'end_match':
         print(f"Processing end match for user {user_id} in event {event_id}...")
-        update_match_count(event_id, user_id)
-        match_count = get_match_count(event_id, user_id)
-        MATCH_COUNT = match_count
-        if MATCH_COUNT is None:
-            print("Error: Failed to fetch match count.")
-            return
-        match_count_updated = True
-        MATCH_COUNT_UPDATED = match_count_updated
-        time.sleep(30)  # Wait for 30 seconds before exiting
+        if match_count_updated.value == 0:
+            update_match_count(event_id, user_id)
+            match_count.value = get_match_count(event_id, user_id)
+            match_count_updated.value == 1
     else:
         raise ValueError(f"Unknown match state: {match_state}")
       
@@ -438,7 +433,6 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         return []
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
-    global MATCH_COUNT, MATCH_COUNT_UPDATED
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -449,10 +443,11 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         num_workers = 4
         workers = []
         
-        MATCH_COUNT = get_match_count(event_id, user_id)
+        match_count = manager.Value('i', 0)  # Shared integer variable
+        match_count_updated = manager.Value('i', 0)  # 0 = False, 1 = True
         
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, MATCH_COUNT, MATCH_COUNT_UPDATED))
+            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, match_count, match_count_updated))
             p.start()
             workers.append(p)
         
