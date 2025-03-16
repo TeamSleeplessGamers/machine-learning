@@ -70,7 +70,7 @@ class Vision:
         # for performance reasons, return a limited number of results.
         # these aren't necessarily the best results.
         if len(rectangles) > int(max_results):
-            print('Warniang: too many results, raise the threshold.')
+            print('Warning: too many results, raise the threshold.')
             rectangles = rectangles[:max_results]
 
         return rectangles
