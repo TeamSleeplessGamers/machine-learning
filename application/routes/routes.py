@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from ..services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
+from ..services.machine_learning import detect_text_with_api_key
 import pytesseract
 import os
 from firebase_admin import db

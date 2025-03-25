@@ -4,7 +4,6 @@ from .warzone import match_template_spectating_in_video
 
 class TwitchRecorder:
     def __init__(self, username, event_id, user_id):
-        # global configuration
         self.username = username
         self.event_id = event_id
         self.user_id = user_id
@@ -21,7 +20,6 @@ class TwitchRecorder:
             return None
     def process_warzone_video_stream_info(self):
         stream_url = self.get_live_stream_url(self.username)
-        # Run the video processing function in a separate thread
         processing_thread = threading.Thread(
             target=match_template_spectating_in_video,
             args=(stream_url, self.event_id, self.user_id)

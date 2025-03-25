@@ -1,3 +1,5 @@
+ultralytics
+easyocr
 appdirs==1.4.4
 attrs==23.2.0
 beautifulsoup4==4.12.3
@@ -75,9 +77,6 @@ pyee==11.1.0
 PyGetWindow==0.0.9
 PyJWT==2.8.0
 PyMsgBox==1.0.9
-# pyobjc-core==10.3.1
-# pyobjc-framework-Cocoa==10.3.1
-# pyobjc-framework-Quartz==10.3.1
 pyparsing==3.1.2
 pyperclip==1.9.0
 pyppeteer==2.0.0

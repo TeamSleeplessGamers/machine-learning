@@ -1,0 +1,5 @@
+train: cod-data/train/images
+val: cod-data/valid/images
+
+nc: 2
+names: ['score1', 'score2']

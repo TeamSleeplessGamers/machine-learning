@@ -1,7 +1,10 @@
 from flask import Flask
 from flask_cors import CORS
 from .config.firebase import initialize_firebase
+import pytesseract
+
 from .routes.routes import routes_bp
+import cv2
 
 def create_app():
     """Factory to create the Flask application.
