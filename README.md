@@ -26,7 +26,7 @@ git pull
 
 If your project runs as a service, restart it to apply changes:
 
-sudo systemctl restart my_ml_service
+sudo systemctl restart machine_learning
 
 5. (Optional) Activate Virtual Environment and Install Dependencies
 
