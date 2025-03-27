@@ -44,6 +44,12 @@ If you encounter any merge conflicts during git pull, resolve them manually befo
 
 Always restart services if code updates affect running processes.
 
+# Testing in DO
+
+Run this command in machine_learning project
+
+gunicorn wsgi:app
+
 
 # Link to documentation
 
