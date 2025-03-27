@@ -5,12 +5,11 @@ import easyocr
 from PIL import Image, ImageTk
 from ultralytics import YOLO
 import os
-import csv
 import numpy as np
 from datetime import datetime
 
 # Load YOLO model
-model = YOLO('../../model/score-detector.pt')
+model = YOLO('machine-learning/model/score-detector.pt')
 reader = easyocr.Reader(['en'])
 
 def filter_score(text):
