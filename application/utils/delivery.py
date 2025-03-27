@@ -11,10 +11,7 @@ from datetime import datetime
 # Load YOLO model
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
-model_path = os.path.join(base_dir, '..', 'machine-learning', 'model', 'score-detector.pt')
-
-# Print the constructed model path
-print(f"Model path: {model_path}")
+model_path = os.path.join(base_dir, '..', '..', 'model', 'score-detector.pt')
 
 model = YOLO(model_path)
 reader = easyocr.Reader(['en'])
