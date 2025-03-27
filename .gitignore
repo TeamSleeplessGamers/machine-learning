@@ -1,7 +1,6 @@
 # created by virtualenv automatically
 /lib
 /bin
-.env
 /recorded
 /processed
 /output-frames
@@ -13,3 +12,5 @@ heatmap.png
 frames/
 frames_processed/
 cod-data
+config.bat
+node_modules
