@@ -10,7 +10,7 @@ import numpy as np
 from datetime import datetime
 
 # Load YOLO model
-model = YOLO('model/score-detector.pt')
+model = YOLO('../../model/score-detector.pt')
 reader = easyocr.Reader(['en'])
 
 def filter_score(text):
