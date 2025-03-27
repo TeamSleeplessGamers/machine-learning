@@ -1,0 +1,40 @@
+name: Flask CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    types: [ "opened", "synchronize" ]
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.12.3'
+
+    - name: Install dependencies
+      run: |
+        python -m venv venv  # Create a virtual environment
+        source venv/bin/activate  # Activate the virtual environment
+        pip install --upgrade pip  # Make sure pip is up to date
+        pip install -r requirements.txt  # Install dependencies from requirements.txt
+
+    - name: Build the project
+      run: |
+        # You can add build commands here, such as compiling assets, generating static files, etc.
+        # This step is usually more useful if you're bundling resources (JS/CSS) or similar.
+        echo "Build step: Flask project is ready."  # Placeholder for build steps
+
+    - name: Run tests
+      run: |
+        source venv/bin/activate  # Activate the virtual environment again
+        pytest  # Run tests using pytest (change if you're using a different testing framework)
+
