@@ -13,3 +13,4 @@ heatmap.png
 frames/
 frames_processed/
 cod-data
+**/__pycache__/
