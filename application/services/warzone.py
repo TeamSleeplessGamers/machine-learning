@@ -414,12 +414,12 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
             workers.append(p)
         
         frame_count = 0
-        time_limit = timedelta(minutes=2)  # 2 minutes time limit
+        time_limit = timedelta(minutes=30)  # 2 minutes time limit
 
         while cap.isOpened():
             current_time = datetime.now()
             if current_time - start_datetime > time_limit:
-                print("Time limit of 2 minutes reached, stopping video processing.")
+                print("Time limit of 30 minutes reached, stopping video processing.")
                 break
 
             ret, frame = cap.read()

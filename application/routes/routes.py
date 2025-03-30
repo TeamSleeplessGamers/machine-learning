@@ -298,7 +298,7 @@ def match_template_spectating_route(event_id):
     else:
         return jsonify({
             'status': 'error',
-            'message': 'Twitch user must be online.',
+            'message': 'You should be a part of this match event and be streaming on your Twitch account.',
             'details': status
         })
     
