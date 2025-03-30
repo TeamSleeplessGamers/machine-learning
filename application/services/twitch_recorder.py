@@ -25,6 +25,7 @@ class TwitchRecorder:
             args=(stream_url, self.event_id, self.user_id)
         )
         processing_thread.start()
+        print("Processing thread has completed successfully.")
                 
 
     

@@ -6,6 +6,7 @@ import re
 from fuzzywuzzy import process
 from firebase_admin import db
 from collections import deque
+from datetime import datetime, timedelta
 from multiprocessing import Process, Manager, Queue
 from queue import Empty
 from ..services.machine_learning import detect_text_with_api_key
@@ -391,11 +392,14 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     # This is the initialization of data for the match template function
     init_data(event_id, user_id)
 
+    # Use the current time as the start time
+    start_datetime = datetime.now()
+
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print("Error: Cannot open video file.")
-            return
+            return False  # Indicate failure
         
         frame_queue = Queue(maxsize=10)
         num_workers = 4
@@ -410,13 +414,20 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
             workers.append(p)
         
         frame_count = 0
+        time_limit = timedelta(minutes=2)  # 2 minutes time limit
+
         while cap.isOpened():
+            current_time = datetime.now()
+            if current_time - start_datetime > time_limit:
+                print("Time limit of 2 minutes reached, stopping video processing.")
+                break
+
             ret, frame = cap.read()
             if not ret:
                 break
 
             frame_count += 1
-            if frame_count % 90 == 0: # (FPS 30/s)
+            if frame_count % 90 == 0:  # (Assuming ~30 FPS, adjust as needed)
                 if not frame_queue.full():
                     frame_queue.put((frame, frame_count))
                 else:
@@ -424,8 +435,13 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
 
         cap.release()
     
+        # Stop workers gracefully
         for _ in range(num_workers):
             frame_queue.put((None, None))
         
         for p in workers:
             p.join()
+
+        print("Video processing completed successfully.")
+
+    return True  # Indicate success

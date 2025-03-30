@@ -286,18 +286,21 @@ def match_template_spectating_route(event_id):
     status = online_status.get('status')
     
     if status == 'online':
-        logging.info(f"Starting Process Recoding for {twitch_channel}")
+        logging.info(f"Starting process recording for {twitch_channel}")
         recorder = TwitchRecorder(twitch_channel, event_id, user_id)
-        recorder.process_warzone_video_stream_info()
+        recorder.process_warzone_video_stream_info()  # Starts the thread
+        # Immediately respond that the process has started
+        return jsonify({
+            'status': 'success',
+            'message': 'Video processing has started.',
+            'details': status
+        })
     else:
         return jsonify({
-            'message': 'Twitch User Must Not Be Online?',
+            'status': 'error',
+            'message': 'Twitch user must be online.',
             'details': status
-        })              
-    return jsonify({
-        'message': 'Twitch User Online Status',
-        'details': status
-    })
+        })
     
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
