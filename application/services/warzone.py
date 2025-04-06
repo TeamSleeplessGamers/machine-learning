@@ -222,14 +222,11 @@ def handle_match_state(frame):
     else:
         return "in_match"
 
-def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag):
-    end_match_start_time = None
+def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag, end_match_start_time):
     frame_height, frame_width = frame.shape[:2]
     expected_width = 1920
     expected_height = 1080
     if frame_width != expected_width or frame_height != expected_height:
-        print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
-        # Resize the frame to the expected size
         frame = cv2.resize(frame, (expected_width, expected_height))
 
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -244,47 +241,37 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         spectating_state_map[state_key] = spectating_pattern_found
 
     if spectating_pattern_found:
-        print(f"Skipping match state logic because user {user_id} is spectating.")
         return
 
     cv2.imwrite(f"frames_processed/frame.png", gray_frame)
 
-    if end_match_start_time:
-        elapsed_time = time.time() - end_match_start_time
+    if end_match_start_time.value != 0.0:
+        elapsed_time = time.time() - end_match_start_time.value
         if elapsed_time > 30:
-            print(f"30 seconds have passed, resetting match processed for user {user_id} in event {event_id}...")
             with flag_lock:
                 flag.value = False
-            end_match_start_time = None
+            end_match_start_time.value = 0.0
                     
     if match_state == 'start_match':
-        print(f"Processing start match for user {user_id} in event {event_id}...")
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
-    elif match_state == 'in_match':
-        print(f"Processing in match for user {user_id} in event {event_id}...")
+    elif match_state == 'in_match' and end_match_start_time is None:
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
         process_frame_scores(event_id, user_id, match_count.value, frame, frame_count)
-    elif match_state == 'end_match':
-        print(f"Processing end match for user {user_id} in event {event_id}...")
-        already_processed = flag.value
+    elif match_state == 'end_match' and not flag.value:
+        with match_count_updated_lock:
+            if match_count_updated.value == 0:
+                update_match_count(event_id, user_id, match_count)
+                match_count_updated.value = 1
+                end_match_start_time.value = time.time()
 
-        if not already_processed:
-            with match_count_updated_lock:
-                if match_count_updated.value == 0:
-                    update_match_count(event_id, user_id, match_count)
-                    match_count_updated.value = 1
-                    end_match_start_time = time.time()
+        with flag_lock:
+            flag.value = True
 
-            with flag_lock:
-                flag.value = True
-    else:
-        raise ValueError(f"Unknown match state: {match_state}")
-
-def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated, flag):
+def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated, flag, end_match_start_time):
     start_time = time.time()
     frame_count = 0
 
@@ -295,7 +282,7 @@ def frame_worker(frame_queue, event_id, user_id, match_count, match_count_update
                 logging.info("Received termination signal (None). Exiting loop.")
                 break
 
-            process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag)
+            process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag, end_match_start_time)
 
         except Empty:
             logging.warning("Frame queue is empty. Waiting for frames...")
@@ -324,7 +311,6 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     try:
         # Step 1: Get contrast images and scores from the video frame
         selected_contrast_images, score1, score2 = process_video(frame)
-        print(f"Score 1: {score1}, Score 2: {score2}")
         
         # Initialize a dictionary to store the combined results
         combined_results = {}
@@ -361,8 +347,8 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         print(f"Error processing frame {frame_count}: {e}")
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
-    example_video_path = "/Users/trell/Projects/machine-learning-2/example_video/bo6_verdask.mp4"
     # This is the initialization of data for the match template function
+    example_video_path = "/Users/trell/Projects/machine-learning-2/example_video/bo6_verdask.mp4"
     init_data(event_id, user_id)
 
     # Use the current time as the start time
@@ -381,9 +367,10 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         match_count = Value('i', 0)
         match_count_updated = Value('i', 0)  # 0 = False, 1 = True
         flag = Value('b', False)  # 'b' = signed char (0 or 1), perfect for boolean
+        end_match_start_time = Value('d', 0.0)
 
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, match_count, match_count_updated, flag))
+            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, match_count, match_count_updated, flag, end_match_start_time))
             p.start()
             workers.append(p)
         
