@@ -242,9 +242,6 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
 
     if spectating_pattern_found:
         return
-
-    cv2.imwrite(f"frames_processed/frame.png", gray_frame)
-
     if end_match_start_time.value != 0.0:
         elapsed_time = time.time() - end_match_start_time.value
         if elapsed_time > 30:
@@ -348,14 +345,13 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     # This is the initialization of data for the match template function
-    example_video_path = "/Users/trell/Projects/machine-learning-2/example_video/bo6_verdask.mp4"
     init_data(event_id, user_id)
 
     # Use the current time as the start time
     start_datetime = datetime.now()
 
     with Manager() as manager:
-        cap = cv2.VideoCapture(example_video_path)
+        cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print("Error: Cannot open video file.")
             return False  # Indicate failure
