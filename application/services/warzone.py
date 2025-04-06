@@ -7,7 +7,7 @@ from fuzzywuzzy import process
 from firebase_admin import db
 from collections import deque
 from datetime import datetime, timedelta
-from multiprocessing import Process, Manager, Queue
+from multiprocessing import Process, Manager, Queue, Value, Lock
 from queue import Empty
 from ..services.machine_learning import detect_text_with_api_key
 from ..utils.delivery import process_video
@@ -19,6 +19,11 @@ logging.basicConfig(level=logging.INFO)
 start_frame_buffer = deque(maxlen=30)
 end_frame_buffer = deque(maxlen=30)
 spectating_frame_buffer = deque(maxlen=30)
+spectating_state_map = {}
+match_count_lock = Lock()
+match_count_updated_lock = Lock()
+flag_lock = Lock()
+
 
 def analyze_buffer(buffer, threshold=5):
     if not buffer:
@@ -38,15 +43,14 @@ def update_firebase(user_id, event_id, is_spectating, max_retries=3):
             logging.error(f"Error updating Firebase: {e}. Attempt {attempt + 1} of {max_retries}.")
             time.sleep(2)
  
-def update_match_count(event_id, user_id):
+def update_match_count(event_id, user_id, match_count):
     """
     Increment the match_count field for the given user in the specified event.
-    If match_count doesn't exist, initialize it at 0.
+    If match_count doesn't exist, initialize it at 0. The increment is done in multiples of 5.
     """
     # Get the path to the user's match count
     path = f'event-{event_id}/{user_id}/matchCount'
     db_ref = db.reference(path)
-
     try:
         # Fetch the current match_count value
         current_match_count = db_ref.get()
@@ -55,44 +59,13 @@ def update_match_count(event_id, user_id):
             # If the match_count doesn't exist, initialize it to 0
             current_match_count = 0
 
-        # Increment the match_count by 1
         new_match_count = current_match_count + 1
+        match_count.value = new_match_count
 
         # Update Firebase with the new match_count
         db_ref.set(new_match_count)
-
-        print(f"Match count for user {user_id} in event {event_id} updated to {new_match_count}")
-
     except Exception as e:
-        logging.error(f"Error updating match count for user {user_id} in event {event_id}: {e}")
-        
-def get_match_count(event_id, user_id):
-    """
-    Fetch and increment the match count for a given user and event.
-    """
-    # Get the path to the user's match count
-    path = f'event-{event_id}/{user_id}/matchCount'
-    db_ref = db.reference(path)
-
-    try:
-        # Fetch the current match_count value
-        current_match_count = db_ref.get()
-
-        if current_match_count is None:
-            # If the match_count doesn't exist, initialize it to 0
-            current_match_count = 0
-
-        # Increment the match_count by 1
-        new_match_count = current_match_count + 1
-
-        # Update Firebase with the new match_count
-        db_ref.set(new_match_count)
-
-        return new_match_count
-
-    except Exception as e:
-        logging.error(f"Error fetching and updating match count for user {user_id} in event {event_id}: {e}")
-        return None
+        logging.error(f"Error updating match count for user {str(user_id)} in event {str(event_id)}: {e}")
 
 def init_data(event_id, user_id, max_retries=3):
     """
@@ -220,101 +193,98 @@ def match_text_with_known_words(text, known_words):
             matched_words.append(word)
     return ' '.join(matched_words)
 
-def process_frame_for_detection(detected_text, frame_buffer, known_words, threshold=5):
-    detection_count = 0
+def handle_match_state(frame):
+    # Define the keywords as a regex pattern
+    VICTORY_KEYWORDS = ["WARZONE VICTORY", "WARZONE DEFEAT", "FINAL KILL"]
+    START_MATCH_KEYWORDS = ["ENTERING THE WARZONE", "DEPLOYMENT WILL BEGIN IN"]
+    AD_KEYWORDS = ["COMMERCIAL"]
+    SPECTATING_KEYWORDS = ["SPECTATING"]
 
-    pattern = re.compile(r'\b(?:' + '|'.join(map(re.escape, known_words)) + r')\b', re.IGNORECASE)
-    if pattern.search(detected_text):
-        detection_count = 1
-    else:
-        corrected_text = match_text_with_known_words(detected_text, known_words)
-        if corrected_text:
-            detection_count = 1
-        else:
-            detection_count = 0
-          
-    frame_buffer.append(detection_count)
-    pattern_found = analyze_buffer(frame_buffer, threshold)
-    return pattern_found
-
-def handle_match_state(frame, user_id, event_id):
-    placement_map = {"1ST": 1, "2ND": 2, "3RD": 3, "4TH": 4, "5TH": 5}
     # Use the API function instead of pytesseract
     detected_text = detect_text_with_api_key(frame)
-    placement_value = None  # Default value
-    start_pattern = None  # Default value
-    ad_pattern = None  # Default value
-    
-    # Flatten the list of detected_text and convert each item to uppercase to check for "PLACE"
-    flattened_data = []
-    for item in detected_text:  # Assuming detect_text_with_api_key returns a list of strings
-        flattened_data.extend(item.split())  # Split string elements into words
+    first_text = detected_text[0] if detected_text else ""
 
-    # Check if "PLACE" is in any of the strings and find the placement before it
-    for i in range(len(flattened_data)):
-        if flattened_data[i].upper() == "PLACE":  # Check if "PLACE" is found
-            if i > 0:  # Make sure there is a word before "PLACE"
-                placement = flattened_data[i - 1].upper()
-                if placement in placement_map:
-                    placement_value = placement_map[placement]  # Store placement number
-                    break
+    # Compile the regex pattern for VICTORY_KEYWORDS
+    victory_pattern = re.compile('|'.join([re.escape(keyword) for keyword in VICTORY_KEYWORDS]), re.IGNORECASE)
+    start_match_pattern = re.compile('|'.join([re.escape(keyword) for keyword in START_MATCH_KEYWORDS]), re.IGNORECASE)
+    ad_pattern = re.compile('|'.join([re.escape(keyword) for keyword in AD_KEYWORDS]), re.IGNORECASE)
+    spectating_pattern = re.compile('|'.join([re.escape(keyword) for keyword in SPECTATING_KEYWORDS]), re.IGNORECASE)
     
-    # Check if the flattened data contains "ENTERING THE WARZONE"
-    for item in flattened_data:
-        if "ENTERING THE WARZONE" in item.upper():
-            start_pattern = True  # Match found for "Entering the Warzone"
-            break  # No need to check further if we found the pattern
-        elif "COMMERCIAL" in item.upper():
-            ad_pattern = True
-    
-    if start_pattern:
+    # Use regex to match the conditions
+    if start_match_pattern.search(first_text):
         return "start_match"
-    elif placement_value:
+    elif victory_pattern.search(first_text):
         return "end_match"
-    elif ad_pattern:
+    elif ad_pattern.search(first_text):
         return "ad_displaying"
-    
-    return "in_match"
+    elif spectating_pattern.search(first_text):
+        return "spectating"
+    else:
+        return "in_match"
 
-def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count):
+def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag):
+    end_match_start_time = None
     frame_height, frame_width = frame.shape[:2]
     expected_width = 1920
     expected_height = 1080
-
     if frame_width != expected_width or frame_height != expected_height:
         print(f"Frame {frame_count}: Unexpected frame size: {frame_width}x{frame_height}")
-        return
-            
+        # Resize the frame to the expected size
+        frame = cv2.resize(frame, (expected_width, expected_height))
+
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
- 
-    #### REFACTOR THIS FUNCTION LATER####  
-    detected_text = pytesseract.image_to_string(frame)
-    spectating_pattern_found = process_frame_for_detection(detected_text, spectating_frame_buffer, ["spectating"])
-    update_firebase(user_id, event_id, spectating_pattern_found)
-   
-    match_state = handle_match_state(gray_frame, user_id, event_id)
-    
+    match_state = handle_match_state(gray_frame)
+
+    spectating_pattern_found = match_state == "spectating"
+    state_key = (user_id, event_id)
+    last_state = spectating_state_map.get(state_key, None)
+
+    if last_state != spectating_pattern_found:
+        update_firebase(user_id, event_id, spectating_pattern_found)
+        spectating_state_map[state_key] = spectating_pattern_found
+
+    if spectating_pattern_found:
+        print(f"Skipping match state logic because user {user_id} is spectating.")
+        return
+
+    cv2.imwrite(f"frames_processed/frame.png", gray_frame)
+
+    if end_match_start_time:
+        elapsed_time = time.time() - end_match_start_time
+        if elapsed_time > 30:
+            print(f"30 seconds have passed, resetting match processed for user {user_id} in event {event_id}...")
+            with flag_lock:
+                flag.value = False
+            end_match_start_time = None
+                    
     if match_state == 'start_match':
         print(f"Processing start match for user {user_id} in event {event_id}...")
-        if match_count_updated.value == 1:
-            match_count_updated.value == 0
-    elif match_state == 'ad_displaying':
-        print(f"Processing ad displaying for user {user_id} in event {event_id}...")      
+        with match_count_updated_lock:
+            if match_count_updated.value == 1:
+                match_count_updated.value = 0
     elif match_state == 'in_match':
         print(f"Processing in match for user {user_id} in event {event_id}...")
-        if match_count_updated.value == 1:
-            match_count_updated.value == 0
-        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count)    
+        with match_count_updated_lock:
+            if match_count_updated.value == 1:
+                match_count_updated.value = 0
+        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count)
     elif match_state == 'end_match':
         print(f"Processing end match for user {user_id} in event {event_id}...")
-        if match_count_updated.value == 0:
-            update_match_count(event_id, user_id)
-            match_count.value = get_match_count(event_id, user_id)
-            match_count_updated.value == 1
+        already_processed = flag.value
+
+        if not already_processed:
+            with match_count_updated_lock:
+                if match_count_updated.value == 0:
+                    update_match_count(event_id, user_id, match_count)
+                    match_count_updated.value = 1
+                    end_match_start_time = time.time()
+
+            with flag_lock:
+                flag.value = True
     else:
         raise ValueError(f"Unknown match state: {match_state}")
 
-def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated):
+def frame_worker(frame_queue, event_id, user_id, match_count, match_count_updated, flag):
     start_time = time.time()
     frame_count = 0
 
@@ -324,7 +294,8 @@ def frame_worker(frame_queue, event_id, user_id, match_count, match_count_update
             if frame is None:
                 logging.info("Received termination signal (None). Exiting loop.")
                 break
-            process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count)
+
+            process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag)
 
         except Empty:
             logging.warning("Frame queue is empty. Waiting for frames...")
@@ -353,6 +324,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     try:
         # Step 1: Get contrast images and scores from the video frame
         selected_contrast_images, score1, score2 = process_video(frame)
+        print(f"Score 1: {score1}, Score 2: {score2}")
         
         # Initialize a dictionary to store the combined results
         combined_results = {}
@@ -361,7 +333,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         for cls, image in selected_contrast_images.items():
             if image is not None and image.size > 0:
                 # Perform OCR and extract the first detected value
-                results = detect_text_with_api_key(image)
+                results = [] #detect_text_with_api_key(image)
                 detected_text = results[0] if results else None  # Default to None if no text detected
                 
                 # Check if detected_text is a valid number
@@ -389,6 +361,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         print(f"Error processing frame {frame_count}: {e}")
     
 def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
+    example_video_path = "/Users/trell/Projects/machine-learning-2/example_video/bo6_verdask.mp4"
     # This is the initialization of data for the match template function
     init_data(event_id, user_id)
 
@@ -396,7 +369,7 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
     start_datetime = datetime.now()
 
     with Manager() as manager:
-        cap = cv2.VideoCapture(video_path)
+        cap = cv2.VideoCapture(example_video_path)
         if not cap.isOpened():
             print("Error: Cannot open video file.")
             return False  # Indicate failure
@@ -405,16 +378,17 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
         num_workers = 4
         workers = []
         
-        match_count = manager.Value('i', 0)
-        match_count_updated = manager.Value('i', 0)  # 0 = False, 1 = True
-        
+        match_count = Value('i', 0)
+        match_count_updated = Value('i', 0)  # 0 = False, 1 = True
+        flag = Value('b', False)  # 'b' = signed char (0 or 1), perfect for boolean
+
         for _ in range(num_workers):
-            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, match_count, match_count_updated))
+            p = Process(target=frame_worker, args=(frame_queue, event_id, user_id, match_count, match_count_updated, flag))
             p.start()
             workers.append(p)
         
         frame_count = 0
-        time_limit = timedelta(minutes=30)  # 2 minutes time limit
+        time_limit = timedelta(minutes=30)  # 30 minutes time limit
 
         while cap.isOpened():
             current_time = datetime.now()
@@ -435,13 +409,6 @@ def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
 
         cap.release()
     
-        # Stop workers gracefully
-        for _ in range(num_workers):
-            frame_queue.put((None, None))
-        
-        for p in workers:
-            p.join()
-
         print("Video processing completed successfully.")
 
     return True  # Indicate success
