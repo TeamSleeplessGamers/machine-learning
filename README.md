@@ -26,7 +26,7 @@ git pull
 
 If your project runs as a service, restart it to apply changes:
 
-sudo systemctl restart machine_learning
+sudo systemctl restart gunicorn.service
 
 5. (Optional) Activate Virtual Environment and Install Dependencies
 
