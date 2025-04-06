@@ -316,7 +316,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
         for cls, image in selected_contrast_images.items():
             if image is not None and image.size > 0:
                 # Perform OCR and extract the first detected value
-                results = [] #detect_text_with_api_key(image)
+                results = detect_text_with_api_key(image)
                 detected_text = results[0] if results else None  # Default to None if no text detected
                 
                 # Check if detected_text is a valid number
