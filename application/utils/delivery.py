@@ -43,11 +43,6 @@ def process_video(frame):
 
     detected_regions = {}
 
-    os.makedirs("frames_processed", exist_ok=True)
-
-    filename = f"frames_processed/frame.jpg"
-    cv2.imwrite(filename, frame)
-
     for result in results:
         boxes = result.boxes
         for box in boxes:
@@ -67,10 +62,7 @@ def process_video(frame):
 
         resized_image = cv2.resize(bottom_half, None, fx=5, fy=5, interpolation=cv2.INTER_LINEAR)
 
-        timestamp = datetime.now().strftime("%H-%M-%S-%f")
         label = cod_detection_labels.get(cls, 'unknown')
-        filename = f"frames_processed/{label}_{timestamp}.jpg"
-        cv2.imwrite(filename, resized_image)
 
         detected_regions[label] = resized_image
 

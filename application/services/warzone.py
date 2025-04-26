@@ -194,25 +194,21 @@ def match_text_with_known_words(text, known_words):
     return ' '.join(matched_words)
 
 def handle_match_state(frame):
-    # Define the keywords as a regex pattern
-    VICTORY_KEYWORDS = ["WARZONE VICTORY", "WARZONE DEFEAT", "FINAL KILL"]
-    START_MATCH_KEYWORDS = ["ENTERING THE WARZONE", "DEPLOYMENT WILL BEGIN IN"]
-    AD_KEYWORDS = ["COMMERCIAL"]
-    SPECTATING_KEYWORDS = ["SPECTATING"]
     filename = f"frames/frame.jpg"
     cv2.imwrite(filename, frame)
     detected_regions = process_video(frame)
 
-    print(f"What is this {detected_regions}")
-
     if 'user_deploying' in detected_regions:
         return "start_match"
-    elif 'warzone_victory' in detected_regions or 'warzone_defeat' in detected_regions:
+    elif 'final_kill_cam' in detected_regions or 'warzone_victory' in detected_regions or 'warzone_defeat' in detected_regions:
         return "end_match"
     elif 'user_spectating' in detected_regions:
         return "spectating"
+    elif 'team_ranking' in detected_regions or 'match_users_left' in detected_regions or 'user_kills' in detected_regions:
+        in_match_regions = {k: v for k, v in detected_regions.items() if k in {'team_ranking', 'match_users_left', 'user_kills'}}
+        return ("in_match", in_match_regions)
     else:
-        return "in_match"
+        return "ad_displaying"
 
 def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag, end_match_start_time):
     frame_height, frame_width = frame.shape[:2]
@@ -227,7 +223,6 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
 
-    print(f"{end_match_start_time.value == 0.0} Match state: {match_state}")
     if last_state != spectating_pattern_found:
         update_firebase(user_id, event_id, spectating_pattern_found)
         spectating_state_map[state_key] = spectating_pattern_found
@@ -245,11 +240,12 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
-    elif match_state == 'in_match' and end_match_start_time.value == 0.0:
+    elif isinstance(match_state, tuple) and match_state[0] == 'in_match' and end_match_start_time.value == 0.0:
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
-        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count)
+        _, detected_regions = match_state
+        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count, detected_regions)
     elif match_state == 'end_match' and not flag.value:
         with match_count_updated_lock:
             if match_count_updated.value == 0:
@@ -283,7 +279,7 @@ def frame_worker(frame_queue, event_id, user_id, match_count, match_count_update
     logging.info(f"Total execution time of frame_worker: {total_elapsed_time:.4f} seconds")
     logging.info("Frame worker exiting")
 
-def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
+def process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions):
     """
     Processes the top-right corner of a frame, resizes it, and detects text using a given text detection function.
 
@@ -297,10 +293,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     Returns:
         None
     """
-    try:
-        # Step 1: Get contrast images and scores from the video frame
-        detected_regions = process_video(frame)
-        
+    try:        
         # Initialize a dictionary to store the combined results
         combined_results = {}
         
@@ -317,7 +310,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
                 
                 # Add the result to the combined_results dictionary
                 combined_results[cls] = detected_text
-
+                print(f"Do i get here detected_text: {cls}")
                 # Debugging: Save the image
                 #output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
                 #cv2.imwrite(output_filename, image)  
