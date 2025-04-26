@@ -1,5 +1,4 @@
 import cv2
-import pytesseract
 import time
 import logging
 import re
@@ -9,6 +8,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from multiprocessing import Process, Manager, Queue, Value, Lock
 from queue import Empty
+import pytesseract
 from ..services.machine_learning import detect_text_with_api_key
 from ..utils.delivery import process_video
 from ..utils.utils import calc_sg_score
@@ -199,25 +199,17 @@ def handle_match_state(frame):
     START_MATCH_KEYWORDS = ["ENTERING THE WARZONE", "DEPLOYMENT WILL BEGIN IN"]
     AD_KEYWORDS = ["COMMERCIAL"]
     SPECTATING_KEYWORDS = ["SPECTATING"]
+    filename = f"frames/frame.jpg"
+    cv2.imwrite(filename, frame)
+    detected_regions = process_video(frame)
 
-    # Use the API function instead of pytesseract
-    detected_text = detect_text_with_api_key(frame)
-    first_text = detected_text[0] if detected_text else ""
+    print(f"What is this {detected_regions}")
 
-    # Compile the regex pattern for VICTORY_KEYWORDS
-    victory_pattern = re.compile('|'.join([re.escape(keyword) for keyword in VICTORY_KEYWORDS]), re.IGNORECASE)
-    start_match_pattern = re.compile('|'.join([re.escape(keyword) for keyword in START_MATCH_KEYWORDS]), re.IGNORECASE)
-    ad_pattern = re.compile('|'.join([re.escape(keyword) for keyword in AD_KEYWORDS]), re.IGNORECASE)
-    spectating_pattern = re.compile('|'.join([re.escape(keyword) for keyword in SPECTATING_KEYWORDS]), re.IGNORECASE)
-    
-    # Use regex to match the conditions
-    if start_match_pattern.search(first_text):
+    if 'user_deploying' in detected_regions:
         return "start_match"
-    elif victory_pattern.search(first_text):
+    elif 'warzone_victory' in detected_regions or 'warzone_defeat' in detected_regions:
         return "end_match"
-    elif ad_pattern.search(first_text):
-        return "ad_displaying"
-    elif spectating_pattern.search(first_text):
+    elif 'user_spectating' in detected_regions:
         return "spectating"
     else:
         return "in_match"
@@ -229,13 +221,13 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
     if frame_width != expected_width or frame_height != expected_height:
         frame = cv2.resize(frame, (expected_width, expected_height))
 
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    match_state = handle_match_state(gray_frame)
+    match_state = handle_match_state(frame)
 
     spectating_pattern_found = match_state == "spectating"
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
 
+    print(f"{end_match_start_time.value == 0.0} Match state: {match_state}")
     if last_state != spectating_pattern_found:
         update_firebase(user_id, event_id, spectating_pattern_found)
         spectating_state_map[state_key] = spectating_pattern_found
@@ -253,7 +245,7 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
-    elif match_state == 'in_match' and end_match_start_time is None:
+    elif match_state == 'in_match' and end_match_start_time.value == 0.0:
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
@@ -307,16 +299,16 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     """
     try:
         # Step 1: Get contrast images and scores from the video frame
-        selected_contrast_images, score1, score2 = process_video(frame)
+        detected_regions = process_video(frame)
         
         # Initialize a dictionary to store the combined results
         combined_results = {}
         
         # Step 2: Process each detected class and image
-        for cls, image in selected_contrast_images.items():
+        for cls, image in detected_regions.items():
             if image is not None and image.size > 0:
                 # Perform OCR and extract the first detected value
-                results = detect_text_with_api_key(image)
+                results = [] # detect_text_with_api_key(image)
                 detected_text = results[0] if results else None  # Default to None if no text detected
                 
                 # Check if detected_text is a valid number
@@ -330,8 +322,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
                 #output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
                 #cv2.imwrite(output_filename, image)  
             else:
-                print(f"No valid detection for Class {cls} | Score1: {score1}, Score2: {score2}")
-        
+                print(f"No valid detection for Class {cls}")
         # Step 3: Extract ranking from the combined results (using cls 0 as the ranking)
         ranking = combined_results.get(0, None)  # Get ranking from class 0 or set to None if not present
         kills_count = combined_results.get(1, None)  # Use class 1 for kills count or set to None if not present

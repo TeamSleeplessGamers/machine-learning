@@ -3,11 +3,12 @@ import easyocr
 from ultralytics import YOLO
 import os
 from datetime import datetime
-
+from ..utils.utils import cod_detection_labels
 # Load YOLO model
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
-model_path = os.path.join(base_dir, '..', '..', 'model', 'score-detector.pt')
+# Model path for score-detector.pt, used for primary score detection
+model_path = os.path.join(base_dir, '..', '..', 'model', 'score-detector-2.pt')
 
 model = YOLO(model_path)
 reader = easyocr.Reader(['en'])
@@ -35,23 +36,18 @@ start_time = None  # To track the start time of inference
 if not os.path.exists("scores_data"):
     os.makedirs("scores_data")
 
-def enhance_contrast(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.medianBlur(gray, 11)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return thresh
-
 def process_video(frame):
     global is_running, cap, scores_data
-    prev_score1, prev_score2 = "0", "0"
-
     results = model(frame, verbose=False)
-    extracted_scores = []
     class_detections = {}
 
-    selected_contrast_images = {}  # Store images for each class
+    detected_regions = {}
 
-    # Step 1: Identify best detections per class
+    os.makedirs("frames_processed", exist_ok=True)
+
+    filename = f"frames_processed/frame.jpg"
+    cv2.imwrite(filename, frame)
+
     for result in results:
         boxes = result.boxes
         for box in boxes:
@@ -62,36 +58,20 @@ def process_video(frame):
             if cls not in class_detections or conf > class_detections[cls]['conf']:
                 class_detections[cls] = {'conf': conf, 'box': (x1, y1, x2, y2)}
 
-    # Step 2: Process detected regions
     for cls, detection in class_detections.items():
         x1, y1, x2, y2 = detection['box']
         detected_region = frame[y1:y2, x1:x2]
+
         height_roi = detected_region.shape[0]
         bottom_half = detected_region[int(height_roi // 3): height_roi, :]
 
         resized_image = cv2.resize(bottom_half, None, fx=5, fy=5, interpolation=cv2.INTER_LINEAR)
 
-        # Apply preprocessing for better OCR accuracy
-        selected_contrast_images[cls] = resized_image #enhance_contrast(resized_image)
+        timestamp = datetime.now().strftime("%H-%M-%S-%f")
+        label = cod_detection_labels.get(cls, 'unknown')
+        filename = f"frames_processed/{label}_{timestamp}.jpg"
+        cv2.imwrite(filename, resized_image)
 
-        # Extract text from the image
-        ocr_result = reader.readtext(selected_contrast_images[cls], allowlist='0123456789', low_text=0.3, adjust_contrast=0.7)
-        detected_texts = [filter_score(text[1]) for text in ocr_result]
-        extracted_scores.append((cls, detected_texts))
+        detected_regions[label] = resized_image
 
-    # Step 3: Determine final scores
-    score1, score2 = prev_score1, prev_score2
-
-    for cls, texts in extracted_scores:
-        if cls == 0 and texts:
-            score1 = texts[0]
-        elif cls == 1 and texts:
-            score2 = texts[0]
-
-    prev_score1, prev_score2 = score1, score2
-
-    # Step 4: Save timestamps for score changes
-    timestep = datetime.now().strftime("%H:%M:%S")
-    scores_data.append([timestep, score1, score2])
-
-    return selected_contrast_images, score1, score2
+    return detected_regions

@@ -24,3 +24,15 @@ def calc_sg_score(kill_count, ranking):
         return kill_count * TOP_5_MULTIPLIER
     else:
         return kill_count  # No multiplier for ranks greater than 5
+
+
+cod_detection_labels = {
+    0: 'warzone_victory',
+    1: 'warzone_defeat',
+    2: 'user_deploying',
+    3: 'user_spectating',
+    4: 'team_ranking',
+    5: 'match_users_left',
+    6: 'user_kills',
+    7: 'final_kill_cam'
+}
