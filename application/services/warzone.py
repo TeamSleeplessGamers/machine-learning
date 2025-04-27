@@ -8,10 +8,10 @@ from collections import deque
 from datetime import datetime, timedelta
 from multiprocessing import Process, Manager, Queue, Value, Lock
 from queue import Empty
-import pytesseract
 from ..services.machine_learning import detect_text_with_api_key
 from ..utils.delivery import process_video
 from ..utils.utils import calc_sg_score
+from ..utils.ocr import detect_number_from_frame
 
 logging.basicConfig(level=logging.INFO)
 
@@ -219,6 +219,7 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
 
     match_state = handle_match_state(frame)
 
+    print(f"What is match state: {match_state}")
     spectating_pattern_found = match_state == "spectating"
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
@@ -300,22 +301,22 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
         # Step 2: Process each detected class and image
         for cls, image in detected_regions.items():
             if image is not None and image.size > 0:
-                results = [] # detect_text_with_api_key(image)
-                detected_text = results[0] if results else None  # Default to None if no text detected
-                
+                results = detect_number_from_frame(image) # detect_text_with_api_key(image)
+                filename = f"frames_processed/frame_{frame_count}.jpg"
+                cv2.imwrite(filename, image)
                 # Check if detected_text is a valid number
-                if detected_text is None or not detected_text.isdigit():
-                    detected_text = None  # Set to None if not a valid number
+                if results is None or not results.isdigit():
+                    results = None  # Set to None if not a valid number
                 
                 # Add the result to the combined_results dictionary
-                combined_results[cls] = detected_text
-                print(f"Do i get here detected_text: {cls}")
+                combined_results[cls] = results
                 # Debugging: Save the image
                 #output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
                 #cv2.imwrite(output_filename, image)  
             else:
                 print(f"No valid detection for Class {cls}")
         # Step 3: Extract ranking from the combined results (using cls 0 as the ranking)
+        print(f"Do i get here detected_text: {combined_results}")
         ranking = combined_results.get(0, None)  # Get ranking from class 0 or set to None if not present
         kills_count = combined_results.get(1, None)  # Use class 1 for kills count or set to None if not present
         
