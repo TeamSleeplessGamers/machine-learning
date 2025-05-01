@@ -198,6 +198,7 @@ def handle_match_state(frame):
     cv2.imwrite(filename, frame)
     detected_regions = process_video(frame)
 
+    print("what is detected regions", detected_regions)
     if 'user_deploying' in detected_regions:
         return "start_match"
     elif 'final_kill_cam' in detected_regions or 'warzone_victory' in detected_regions or 'warzone_defeat' in detected_regions:
@@ -218,8 +219,6 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         frame = cv2.resize(frame, (expected_width, expected_height))
 
     match_state = handle_match_state(frame)
-
-    print(f"What is match state: {match_state}")
     spectating_pattern_found = match_state == "spectating"
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
@@ -302,6 +301,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
         for cls, image in detected_regions.items():
             if image is not None and image.size > 0:
                 results = detect_number_from_frame(image) # detect_text_with_api_key(image)
+                print(f"This {frame_count} is result for {cls}: {results}")
                 filename = f"frames_processed/frame_{frame_count}.jpg"
                 cv2.imwrite(filename, image)
                 # Check if detected_text is a valid number
