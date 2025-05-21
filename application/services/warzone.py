@@ -198,7 +198,6 @@ def handle_match_state(frame):
     cv2.imwrite(filename, frame)
     detected_regions = process_video(frame)
 
-    print("what is detected regions", detected_regions)
     if 'user_deploying' in detected_regions:
         return "start_match"
     elif 'final_kill_cam' in detected_regions or 'warzone_victory' in detected_regions or 'warzone_defeat' in detected_regions:
@@ -219,6 +218,8 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         frame = cv2.resize(frame, (expected_width, expected_height))
 
     match_state = handle_match_state(frame)
+    output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_before_{frame_count}_class.jpg"
+    cv2.imwrite(output_filename, frame)  
     spectating_pattern_found = match_state == "spectating"
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
