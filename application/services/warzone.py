@@ -196,7 +196,7 @@ def match_text_with_known_words(text, known_words):
 
 def handle_match_state(frame):
     filename = f"frames/frame.jpg"
-    cv2.imwrite(filename, frame)
+    #cv2.imwrite(filename, frame)
     detected_regions = process_video(frame)
 
     if 'user_deploying' in detected_regions:
@@ -220,7 +220,7 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
 
     match_state = handle_match_state(frame)
     output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_before_{frame_count}_class.jpg"
-    cv2.imwrite(output_filename, frame)  
+    #cv2.imwrite(output_filename, frame)  
     spectating_pattern_found = match_state == "spectating"
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
@@ -305,7 +305,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
                 results = number_detector_2(image) # detect_text_with_api_key(image)
                 print(f"This {frame_count} is result for {cls}: {results}")
                 filename = f"frames_processed/frame_{frame_count}.jpg"
-                cv2.imwrite(filename, image)
+                #cv2.imwrite(filename, image)
                 # Check if detected_text is a valid number
                 if results is None:
                     results = None  # Set to None if not a valid number
