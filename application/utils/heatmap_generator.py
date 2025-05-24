@@ -13,7 +13,7 @@ def generate_heatmap(df, heatmap_path):
     
     plt.figure(figsize=(12, 8))
     sns.heatmap(pivot_table, annot=True, fmt='d', cmap='YlGnBu', linewidths=0.5)
-    plt.title('Heatmap of Streamer Activity')
+    plt.title('Heatmap of Streamer Activity (AllTime)')
     plt.savefig(heatmap_path)
     plt.close()
 
