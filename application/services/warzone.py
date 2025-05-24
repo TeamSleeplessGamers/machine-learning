@@ -9,9 +9,8 @@ from datetime import datetime, timedelta
 from multiprocessing import Process, Manager, Queue, Value, Lock
 from queue import Empty
 from ..services.machine_learning import detect_text_with_api_key
-from ..utils.delivery import process_video
+from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score
-from ..utils.ocr import detect_number_from_frame
 
 logging.basicConfig(level=logging.INFO)
 
@@ -301,7 +300,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
         # Step 2: Process each detected class and image
         for cls, image in detected_regions.items():
             if image is not None and image.size > 0:
-                results = detect_number_from_frame(image) # detect_text_with_api_key(image)
+                results = number_detector_2(image) # detect_text_with_api_key(image)
                 print(f"This {frame_count} is result for {cls}: {results}")
                 filename = f"frames_processed/frame_{frame_count}.jpg"
                 cv2.imwrite(filename, image)

@@ -1,14 +1,17 @@
 import cv2
 from ultralytics import YOLO
 import os
-from ..utils.utils import cod_detection_labels
+from ..utils.utils import number_detection_labels, cod_detection_labels
 # Load YOLO model
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Model path for score-detector.pt, used for primary score detection
-model_path = os.path.join(base_dir, '..', '..', 'model', 'score-detector-3.pt')
+model_path = os.path.join(base_dir, '..', '..', 'model', 'warzone.pt')
+model_path_2 = os.path.join(base_dir, '..', '..', 'model', 'ocr-detector.pt')
 
 model = YOLO(model_path)
+model_2 = YOLO(model_path_2)
+
 
 def process_video(frame):
     results = model(frame, verbose=False)
@@ -40,3 +43,29 @@ def process_video(frame):
         detected_regions[label] = resized_image
 
     return detected_regions
+
+def number_detector_2(frame):
+    results = model_2(frame, verbose=False)
+    class_detections = {}
+
+    for result in results:
+        boxes = result.boxes
+        for box in boxes:
+            cls = int(box.cls)
+            conf = float(box.conf)
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+            if cls not in class_detections or conf > class_detections[cls]['conf']:
+                class_detections[cls] = {'conf': conf, 'box': (x1, y1, x2, y2)}
+
+    if not class_detections:
+        return None
+
+    most_confident_cls = max(class_detections.items(), key=lambda item: item[1]['conf'])[0]
+    label_str = number_detection_labels.get(most_confident_cls, 'unknown')
+
+    try:
+        # Right now looks like model value is one digit off the actual value
+        return int(label_str) + 1
+    except ValueError:
+        return None
