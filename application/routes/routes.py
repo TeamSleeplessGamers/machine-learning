@@ -276,6 +276,7 @@ def webhook_callback():
 def match_template_spectating_route(event_id):
     user_id = request.json.get('userId')
     team_id = request.json.get('teamId')
+    return jsonify({ 'status': 'test run'})
     if not user_id:
         return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
 
