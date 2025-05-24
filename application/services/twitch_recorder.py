@@ -3,10 +3,11 @@ import threading
 from .warzone import match_template_spectating_in_video
 
 class TwitchRecorder:
-    def __init__(self, username, event_id, user_id):
+    def __init__(self, username, event_id, user_id, team_id):
         self.username = username
         self.event_id = event_id
         self.user_id = user_id
+        self.team_id = team_id
 
     def get_live_stream_url(self, twitch_profile):
         try:
@@ -22,7 +23,7 @@ class TwitchRecorder:
         stream_url = self.get_live_stream_url(self.username)
         processing_thread = threading.Thread(
             target=match_template_spectating_in_video,
-            args=(stream_url, self.event_id, self.user_id)
+            args=(stream_url, self.event_id, self.user_id, self.team_id)
         )
         processing_thread.start()
         print("Processing thread has completed successfully.")

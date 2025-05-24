@@ -66,42 +66,44 @@ def update_match_count(event_id, user_id, match_count):
     except Exception as e:
         logging.error(f"Error updating match count for user {str(user_id)} in event {str(event_id)}: {e}")
 
-def init_data(event_id, user_id, max_retries=3):
+def init_data(event_id, user_id, team_id=None, max_retries=3):
     """
     Initialize match_0 data in Firebase for a given event and user with default values.
     
     Args:
         event_id (str): The event ID.
         user_id (str): The user ID.
+        team_id (str, optional): The team ID to store at the user level (not in matchHistory).
         max_retries (int): The maximum number of retries if the operation fails.
     """
-    # Default values for the first match entry
-    default_data = {
-        'ranking': 0,
-        'killCount': 0,
-        'sgScore': 0
-    }
-
-    # Define the Firebase path for match history
-    path = f'event-{event_id}/{user_id}/matchHistory'
-    
-    db_ref = db.reference(path)
+    # Firebase path to the user's event data
+    user_path = f'event-{event_id}/{user_id}'
+    db_ref = db.reference(user_path)
 
     for attempt in range(max_retries):
         try:
-            # Fetch current match history object from Firebase
-            current_data = db_ref.get()
+            # Fetch current user-level data
+            current_data = db_ref.get() or {}
 
-            if current_data is None:
-                current_data = {}  # Initialize if empty
+            # Only set teamId once at the top level (if provided and not already present)
+            if team_id is not None and 'teamId' not in current_data:
+                current_data['teamId'] = team_id
 
-            # Set initial match_0 data
-            current_data['match_0'] = default_data
+            # Set default match_0 data under matchHistory
+            if 'matchHistory' not in current_data:
+                current_data['matchHistory'] = {}
 
-            # Update the Firebase with the new match data
+            current_data['matchHistory']['match_0'] = {
+                'ranking': 0,
+                'killCount': 0,
+                'sgScore': 0
+            }
+
+            # Write updated data back to Firebase
             db_ref.set(current_data)
+
             print(f"Initialized match_0 data for {user_id} in event {event_id}")
-            break  # Exit the loop if the operation is successful
+            break
 
         except Exception as e:
             logging.error(f"Error initializing match data: {e}. Attempt {attempt + 1} of {max_retries}.")
@@ -305,7 +307,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
                 filename = f"frames_processed/frame_{frame_count}.jpg"
                 cv2.imwrite(filename, image)
                 # Check if detected_text is a valid number
-                if results is None or not results.isdigit():
+                if results is None:
                     results = None  # Set to None if not a valid number
                 
                 # Add the result to the combined_results dictionary
@@ -316,9 +318,8 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
             else:
                 print(f"No valid detection for Class {cls}")
         # Step 3: Extract ranking from the combined results (using cls 0 as the ranking)
-        print(f"Do i get here detected_text: {combined_results}")
-        ranking = combined_results.get(0, None)  # Get ranking from class 0 or set to None if not present
-        kills_count = combined_results.get(1, None)  # Use class 1 for kills count or set to None if not present
+        ranking = combined_results.get('team_ranking', None)
+        kills_count = combined_results.get('user_kills', None)
         
         update_firebase_match_ranking_and_score(
             user_id, event_id, match_count, ranking, kills_count
@@ -327,9 +328,9 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
     
-def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
+def match_template_spectating_in_video(video_path, event_id=None, user_id=None, team_id=None):
     # This is the initialization of data for the match template function
-    init_data(event_id, user_id)
+    init_data(event_id, user_id, team_id)
 
     # Use the current time as the start time
     start_datetime = datetime.now()

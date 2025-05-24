@@ -275,6 +275,7 @@ def webhook_callback():
 @routes_bp.route('/match_template_spectating/<string:event_id>', methods=['POST'])
 def match_template_spectating_route(event_id):
     user_id = request.json.get('userId')
+    team_id = request.json.get('teamId')
     if not user_id:
         return jsonify({'status': 'error', 'message': 'User ID is required.'}), 400
 
@@ -287,7 +288,7 @@ def match_template_spectating_route(event_id):
     
     if status == 'online':
         logging.info(f"Starting process recording for {twitch_channel}")
-        recorder = TwitchRecorder(twitch_channel, event_id, user_id)
+        recorder = TwitchRecorder(twitch_channel, event_id, user_id, team_id)
         recorder.process_warzone_video_stream_info()  # Starts the thread
         # Immediately respond that the process has started
         return jsonify({
