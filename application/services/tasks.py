@@ -5,14 +5,12 @@ from ..celery_config import celery_app
 from ..config.firebase import initialize_firebase
 from dotenv import load_dotenv
 from .warzone import init_data
-import multiprocessing
 import logging
 
 load_dotenv()
 
 @celery_app.task(bind=True, name="process_warzone_video_stream_info")
 def process_warzone_video_stream_info_task(self, username, event_id, user_id, team_id):
-    multiprocessing.set_start_method('spawn', force=True)
     initialize_firebase()
     recorder = TwitchRecorder(username, event_id, user_id, team_id)
     stream_url = recorder.get_live_stream_url()
