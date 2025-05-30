@@ -1,7 +1,6 @@
 # created by virtualenv automatically
 /lib
 /bin
-.env
 /recorded
 /processed
 /output-frames
@@ -14,3 +13,5 @@ frames/
 frames_processed/
 cod-data
 **/__pycache__/
+config.bat
+node_modules
