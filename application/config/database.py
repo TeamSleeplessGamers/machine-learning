@@ -9,7 +9,7 @@ class Database:
 
     def initialize_database(self):
         try:
-            self.database_url = os.environ['DATABASE_URL']
+            self.database_url = os.environ.get('DATABASE_URL')
             self.conn = psycopg2.connect(
                 self.database_url,
                 cursor_factory=RealDictCursor

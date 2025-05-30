@@ -1,6 +1,4 @@
 import subprocess
-import threading
-from .warzone import match_template_spectating_in_video
 
 class TwitchRecorder:
     def __init__(self, username, event_id, user_id, team_id):
@@ -9,24 +7,21 @@ class TwitchRecorder:
         self.user_id = user_id
         self.team_id = team_id
 
-    def get_live_stream_url(self, twitch_profile):
+    def get_live_stream_url(self):
         try:
             result = subprocess.run(
-                ["streamlink", "--twitch-disable-ads", f"https://twitch.tv/{twitch_profile}", "best", "--stream-url"],
-                check=True, text=True, capture_output=True
+                [
+                    "streamlink", 
+                    "--twitch-disable-ads", 
+                    f"https://twitch.tv/{self.username}", 
+                    "best", 
+                    "--stream-url"
+                ],
+                check=True,
+                text=True,
+                capture_output=True
             )
             return result.stdout.strip()
         except subprocess.CalledProcessError as e:
-            print(f"Error: {e.stderr}")
+            print(f"[Streamlink Error] {e.stderr}")
             return None
-    def process_warzone_video_stream_info(self):
-        stream_url = self.get_live_stream_url(self.username)
-        processing_thread = threading.Thread(
-            target=match_template_spectating_in_video,
-            args=(stream_url, self.event_id, self.user_id, self.team_id)
-        )
-        processing_thread.start()
-        print("Processing thread has completed successfully.")
-                
-
-    

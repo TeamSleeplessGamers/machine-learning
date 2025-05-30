@@ -328,13 +328,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
     
-def match_template_spectating_in_video(video_path, event_id=None, user_id=None, team_id=None):
-    # This is the initialization of data for the match template function
-    init_data(event_id, user_id, team_id)
-
-    # Use the current time as the start time
-    start_datetime = datetime.now()
-
+def pull_warzone_stream_and_process(start_datetime, video_path, event_id=None, user_id=None, team_id=None):
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():

@@ -1,7 +1,9 @@
 from flask import Blueprint, request, jsonify, send_file, Response
 import pandas as pd
 import time
-from ..services.twitch_recorder import TwitchRecorder
+
+from application.services.tasks import process_warzone_video_stream_info_task
+from application.services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
 from ..services.machine_learning import detect_text_with_api_key
 import pytesseract
@@ -170,7 +172,7 @@ def match_template_route():
     return jsonify({'status': 'success', 'message': 'Processing completed.'})
 
 def check_user_online(user_login):
-    twitch_client_id = os.environ['CLIENT_ID']
+    twitch_client_id = os.environ.get('CLIENT_ID')
     
     headers = {
         'Client-ID': twitch_client_id,    
@@ -215,8 +217,8 @@ def append_to_csv(display_name, day, time):
 
 @routes_bp.route('/webhooks/callback', methods=['POST'])
 def webhook_callback():
-    twitch_client_id = os.environ['CLIENT_ID']
-    twitch_client_secret = os.environ['CLIENT_SECRET']
+    twitch_client_id = os.environ.get('CLIENT_ID')
+    twitch_client_secret = os.environ.get('CLIENT_SECRET')
     headers = request.headers
     body = request.get_data(as_text=True)
     MESSAGE_TYPE_VERIFICATION = 'webhook_callback_verification'
@@ -272,8 +274,8 @@ def webhook_callback():
                     return f"Other error occurred: {err}"
     return '', 204
 
-@routes_bp.route('/match_template_spectating/<string:event_id>', methods=['POST'])
-def match_template_spectating_route(event_id):
+@routes_bp.route('/start_match/<string:event_id>', methods=['POST'])
+def start_competition_match_route(event_id):
     user_id = request.json.get('userId')
     team_id = request.json.get('teamId')
     if not user_id:
@@ -288,8 +290,7 @@ def match_template_spectating_route(event_id):
     
     if status == 'online':
         logging.info(f"Starting process recording for {twitch_channel}")
-        recorder = TwitchRecorder(twitch_channel, event_id, user_id, team_id)
-        recorder.process_warzone_video_stream_info()  # Starts the thread
+        process_warzone_video_stream_info_task.delay(twitch_channel, event_id, user_id, team_id)
         # Immediately respond that the process has started
         return jsonify({
             'status': 'success',
