@@ -11,7 +11,7 @@ database = Database()
 conn = database.get_connection()
  
 def list_of_sg_subscribed_twitch_streamers():
-    twitch_client_id = os.environ['CLIENT_ID']
+    twitch_client_id = os.environ.get('CLIENT_ID')
     headers = {
         'Authorization': f'Bearer {get_twitch_oauth_token()}',
         'Client-Id': twitch_client_id
@@ -43,9 +43,9 @@ def list_of_sg_subscribed_twitch_streamers():
     return broadcaster_user_ids
                 
 def process_user_id_to_subscribe(user_ids):
-    twitch_client_id = os.environ['CLIENT_ID']
-    twitch_webhook_url = os.environ['TWITCH_WEBHOOK_URL']
-    twitch_client_secret = os.environ['CLIENT_SECRET']
+    twitch_client_id = os.environ.get('CLIENT_ID')
+    twitch_webhook_url = os.environ.get('TWITCH_WEBHOOK_URL')
+    twitch_client_secret = os.environ.get('CLIENT_SECRET')
     event_types = ["stream.online", "stream.offline"]
 
     for user_id in user_ids:
@@ -81,7 +81,7 @@ def process_user_id_to_subscribe(user_ids):
                 print(f"An unexpected error occurred: {err}")
              
 def subscribe_to_twitch_streamers():
-    twitch_client_id = os.environ['CLIENT_ID']
+    twitch_client_id = os.environ.get('CLIENT_ID')
 
     users = database.get_list_of_sg_users()
     if len(users) > 0:

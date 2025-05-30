@@ -2,9 +2,9 @@ import os
 import requests
 
 def get_twitch_oauth_token():
-    twitch_client_id = os.environ['CLIENT_ID']
-    twitch_client_secret = os.environ['CLIENT_SECRET']
-    twitch_oauth_url = os.environ['TWITCH_OAUTH_URL']
+    twitch_client_id =os.environ.get('CLIENT_ID')
+    twitch_client_secret = os.environ.get('CLIENT_SECRET')
+    twitch_oauth_url = os.environ.get('TWITCH_OAUTH_URL')
 
     params = {
         'client_id': twitch_client_id,
