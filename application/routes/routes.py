@@ -407,7 +407,8 @@ def process_twitch_stream(username):
     cap = cv2.VideoCapture(stream_url)
     if not cap.isOpened():
         raise Exception("Could not open Twitch stream")
-
+    frame_count = 0
+    
     while datetime.now() < end_time:
         ret, frame = cap.read()
         if not ret:
