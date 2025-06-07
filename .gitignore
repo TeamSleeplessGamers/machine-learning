@@ -2,6 +2,7 @@
 /lib
 /bin
 .env
+.env.production
 /recorded
 /processed
 /output-frames

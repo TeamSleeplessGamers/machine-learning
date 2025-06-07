@@ -16,7 +16,7 @@ from ..utils.heatmap_generator import generate_heatmap
 import requests
 import csv
 from datetime import datetime, timedelta
-from celery import Celery
+from .. import celery_config
 import streamlink
 from ultralytics import YOLO
 import threading
@@ -32,7 +32,7 @@ routes_bp = Blueprint('routes', __name__)
 
 # Load game config (with error handling)
 try:
-    with open('../game-config.yaml', 'r') as f:
+    with open('../../game-config.yaml', 'r') as f:
         config = yaml.safe_load(f)
 except FileNotFoundError:
     print("Warning: game-config.yaml not found. Using default configuration.")
@@ -392,7 +392,7 @@ def process_stream():
 
 
 # Celery task to process the Twitch stream
-@Celery.task
+@celery_config.celery.task
 def process_twitch_stream(username):
     # Stream duration: 4 hours (or from config if available)
     end_time = datetime.now() + timedelta(hours=4 if not config else config.get('stream_duration', 4))
@@ -413,39 +413,40 @@ def process_twitch_stream(username):
         if not ret:
             continue
 
+        frame_count += 1
+
+        # Process every 90th frame (~3 seconds at 30 FPS)
+        if frame_count % 90 != 0:
+            continue
+
         # Run YOLOv8 inference
         results = model(frame)
-        
+
         # Process detections
         for result in results:
-            boxes = result.boxes.xyxy  # Bounding boxes
-            confidences = result.boxes.conf  # Confidence scores
-            classes = result.boxes.cls  # Class IDs
+            boxes = result.boxes.xyxy
+            confidences = result.boxes.conf
+            classes = result.boxes.cls
 
             for box, conf, cls in zip(boxes, confidences, classes):
-                if conf > 0.5:  # Confidence threshold (or from config if available)
+                if conf > 0.5:
                     x1, y1, x2, y2 = map(int, box)
-                    w = x2 - x1
-                    h = y2 - y1
-                    # Crop the detected region (e.g., scoreboard)
                     cropped = frame[y1:y2, x1:x2]
 
-                    # Use OCR to extract numbers from the cropped region
                     gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
                     text = pytesseract.image_to_string(gray, config='--psm 6 digits')
-                    number = ''.join(filter(str.isdigit, text))  # Extract digits only
+                    number = ''.join(filter(str.isdigit, text))
 
                     print(f"What is number {number}")
                     if number:
-                        # Store the extracted number in Firebase
-                        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")  # Replace ':' with '-'
+                        timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
                         ref = db.reference(f'streams/{username}/{timestamp}')
                         ref.set({
                             'number': number,
                             'timestamp': timestamp
                         })
 
-    cap.release()
+        cap.release()
     
 def start_scheduler_thread():
     scheduler_thread = threading.Thread(target=start_scheduler)
