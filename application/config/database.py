@@ -57,13 +57,13 @@ class Database:
         if not self.conn:
             print("No database connection.")
             return None
-
         try:
             with self.conn.cursor() as cursor:
                 query = "SELECT time_limit FROM events WHERE id = %s"
                 cursor.execute(query, (event_id,))
                 result = cursor.fetchone()
-                return result[0] if result else None
+                time_limit = result['time_limit']
+                return time_limit if result else None
         except Exception as e:
             print(f"Error executing SELECT query: {e}")
             return None
