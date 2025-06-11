@@ -409,16 +409,21 @@ def process_twitch_stream(username):
         raise Exception("Could not open Twitch stream")
     frame_count = 0
     
+    last_processed_time = time.time()
+
     while datetime.now() < end_time:
         ret, frame = cap.read()
         if not ret:
             continue
 
-        frame_count += 1
+        now = time.time()
 
-        # Process every 90th frame (~3 seconds at 30 FPS)
-        if frame_count % 90 != 0:
+        # Only process if 3 seconds have passed since the last detection
+        if now - last_processed_time < 3:
             continue
+
+        last_processed_time = now
+        print("Running YOLO inference...")
 
         # Run YOLOv8 inference
         results = model(frame)
@@ -447,8 +452,8 @@ def process_twitch_stream(username):
                             'timestamp': timestamp
                         })
 
-        cap.release()
-    
+    cap.release()
+
 def start_scheduler_thread():
     scheduler_thread = threading.Thread(target=start_scheduler)
     scheduler_thread.daemon = True

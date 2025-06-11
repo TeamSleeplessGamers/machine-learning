@@ -72,7 +72,7 @@ To run the Celery worker locally during development, follow these steps:
     Make sure you run this command from the project root directory (where the `application` folder is located):
 
     ```bash
-    celery -A application.celery_config worker --loglevel=info
+    celery -A application.celery_config worker --loglevel=info --pool=threads --concurrency=1
     ```
 
     - `-A application.celery_config` points Celery to your app instance.
