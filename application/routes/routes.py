@@ -435,7 +435,6 @@ def process_twitch_stream(username, user_id, event_id, match_duration):
         raise Exception("Could not open Twitch stream")
 
     frame_count = 0
-    last_processed_time = time.time()
 
     while datetime.now() < end_time:
         ret, frame = cap.read()
@@ -443,13 +442,11 @@ def process_twitch_stream(username, user_id, event_id, match_duration):
             continue
 
         frame_count += 1
-        now = time.time()
 
-        # Only process if 3 seconds have passed since last detection
-        if now - last_processed_time < 3:
+        # Only process every 90th frame (assuming ~30 FPS ≈ 3 seconds)
+        if frame_count % 90 != 0:
             continue
 
-        last_processed_time = now
         match_state = handle_match_state(frame)
         spectating_pattern_found = match_state == "spectating"
         state_key = (user_id, event_id)
@@ -486,6 +483,7 @@ def process_twitch_stream(username, user_id, event_id, match_duration):
             flag = True
 
     cap.release()
+
 
 def process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions):
     """
