@@ -487,6 +487,53 @@ def process_twitch_stream(username, user_id, event_id, match_duration):
 
     cap.release()
 
+def process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions):
+    """
+    Processes the top-right corner of a frame, resizes it, and detects text using a given text detection function.
+
+    Args:
+        frame (numpy.ndarray): The input video frame.
+        frame_count (int): The frame number (used for logging).
+        event_id (int): The event ID.
+        user_id (int): The user ID.
+        match_count (int): The match count.
+        
+    Returns:
+        None
+    """
+    try:        
+        # Initialize a dictionary to store the combined results
+        combined_results = {}
+        
+        # Step 2: Process each detected class and image
+        for cls, image in detected_regions.items():
+            if image is not None and image.size > 0:
+                results = number_detector_2(image) # detect_text_with_api_key(image)
+                print(f"This {frame_count} is result for {cls}: {results}")
+                filename = f"frames_processed/frame_{frame_count}.jpg"
+                #cv2.imwrite(filename, image)
+                # Check if detected_text is a valid number
+                if results is None:
+                    results = None  # Set to None if not a valid number
+                
+                # Add the result to the combined_results dictionary
+                combined_results[cls] = results
+                # Debugging: Save the image
+                #output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
+                #cv2.imwrite(output_filename, image)  
+            else:
+                print(f"No valid detection for Class {cls}")
+        # Step 3: Extract ranking from the combined results (using cls 0 as the ranking)
+        ranking = combined_results.get('team_ranking', None)
+        kills_count = combined_results.get('user_kills', None)
+        
+        update_firebase_match_ranking_and_score(
+            user_id, event_id, match_count, ranking, kills_count
+        )
+        
+    except Exception as e:
+        print(f"Error processing frame {frame_count}: {e}")
+
 def handle_match_state(frame):
     filename = f"frames/frame.jpg"
     #cv2.imwrite(filename, frame)
