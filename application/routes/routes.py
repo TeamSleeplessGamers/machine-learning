@@ -23,6 +23,7 @@ import threading
 from ..services.scheduler import start_scheduler
 from datetime import datetime
 from ..config.database import Database
+from ..config.firebase import initialize_firebase
 
 database = Database()
 conn = database.get_connection()
@@ -394,6 +395,8 @@ def process_stream():
 # Celery task to process the Twitch stream
 @celery_config.celery.task
 def process_twitch_stream(username):
+    initialize_firebase()
+
     # Stream duration: 4 hours (or from config if available)
     end_time = datetime.now() + timedelta(hours=4 if not config else config.get('stream_duration', 4))
     
@@ -443,7 +446,6 @@ def process_twitch_stream(username):
                     text = pytesseract.image_to_string(gray, config='--psm 6 digits')
                     number = ''.join(filter(str.isdigit, text))
 
-                    print(f"What is number {number}")
                     if number:
                         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
                         ref = db.reference(f'streams/{username}/{timestamp}')
