@@ -53,3 +53,17 @@ class Database:
         except Exception as e:
             print(f"Error executing SELECT query: {e}")
             return {}
+    def get_match_duration_by_event_id(self, event_id):
+        if not self.conn:
+            print("No database connection.")
+            return None
+
+        try:
+            with self.conn.cursor() as cursor:
+                query = "SELECT time_limit FROM events WHERE id = %s"
+                cursor.execute(query, (event_id,))
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except Exception as e:
+            print(f"Error executing SELECT query: {e}")
+            return None
