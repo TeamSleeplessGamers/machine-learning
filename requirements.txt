@@ -3,7 +3,7 @@ easyocr
 celery
 runpod
 redis
-ssl
+#ssl
 appdirs==1.4.4
 attrs==23.2.0
 beautifulsoup4==4.12.3
