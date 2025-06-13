@@ -35,4 +35,4 @@ done
 export $(cat .env | xargs)
 
 echo "=== Starting Celery GPU worker ==="
-celery -A application.celery_config worker -l info -Q $GPU_QUEUE_NAME
+celery -A application.celery_config.celery worker -Q gpu_tasks --loglevel=info --pool=solo
