@@ -220,7 +220,7 @@ def fifteen_minute_job():
                 if acquired and is_running is False:
                     result = create_gpu_task_for_event(event['id'])
                     if result:
-                        database.update_gpu_task_for_event_start_soon("event", event['id'], "pod_id", "running")
+                        database.update_gpu_task_for_event_start_soon("event", event['id'], result, "running")
                     return
 
             if is_gpu_task_is_running_for_entity:
