@@ -10,6 +10,8 @@ celery = Celery(
     backend=os.environ.get("REDIS_URL")
 )
 
+celery.autodiscover_tasks(['application.tasks'])
+
 # Optional: load additional settings from a separate config
 celery.conf.update(
     task_serializer='json',
