@@ -17,13 +17,13 @@ echo "=== Installing Python dependencies ==="
 #pip install -r requirements.txt
 
 echo "=== Copying .env file into project directory ==="
-cp ~/.env .env
+cp ../.env .env
 
 echo "=== Loading environment variables ==="
 source .env
 
 echo "=== Copying firebase json file into project directory ==="
-cp ~/firebase-dev.json firebase-dev.json
+cp ../firebase-dev.json firebase-dev.json
 
 echo "=== Waiting for Redis to be reachable at $REDIS_HOST:$REDIS_PORT ==="
 until nc -z $REDIS_HOST $REDIS_PORT; do
