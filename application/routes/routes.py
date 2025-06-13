@@ -21,7 +21,7 @@ from .. import celery_config
 import streamlink
 from ultralytics import YOLO
 import threading
-from ..services.scheduler import start_scheduler
+from ..services.scheduler import start_scheduler, start_hourly_scheduler
 from datetime import datetime
 from ..config.database import Database
 from ..config.firebase import initialize_firebase
@@ -414,4 +414,10 @@ def start_scheduler_thread():
     scheduler_thread.daemon = True
     scheduler_thread.start()
 
+def start_hourly_thread():
+    hourly_thread = threading.Thread(target=start_hourly_scheduler)
+    hourly_thread.daemon = True
+    hourly_thread.start()
+
 start_scheduler_thread()
+start_hourly_thread()

@@ -5,6 +5,7 @@ import os
 import requests
 from .twitch_oauth import get_twitch_oauth_token
 from ..config.database import Database
+from dotenv import dotenv_values
 
 
 database = Database()
@@ -121,6 +122,96 @@ def start_scheduler():
         target_time += timedelta(days=1)
 
     schedule.every().day.at(target_time.strftime("%H:%M:%S")).do(subscribe_to_twitch_streamers)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+        
+
+def create_gpu_task_for_event(event_id): 
+    print("handle creating gpu")
+
+    url = "https://rest.runpod.io/v1/pods"
+    env = dotenv_values(".env")
+    
+    payload = {
+        "allowedCudaVersions": ["12.8"],
+        "cloudType": "SECURE",
+        "computeType": "GPU",
+        "containerDiskInGb": 50,
+        "containerRegistryAuthId": "clzdaifot0001l90809257ynb",
+        "countryCodes": ["US"],
+        "cpuFlavorPriority": "availability",
+        "dataCenterIds": ["US-DE-1"],
+        "dataCenterPriority": "availability",
+        "dockerEntrypoint": [],
+        "dockerStartCmd": [],
+        "gpuTypeIds": ["NVIDIA L4"], 
+        "vcpuCount": 12,             
+        "minRAMPerGPU": 55,            
+        "volumeInGb": 20,     
+        "env": env,
+        "globalNetworking": True,
+        "gpuCount": 2,
+        "gpuTypePriority": "availability",
+        "interruptible": False,
+        "locked": False,
+        "minDiskBandwidthMBps": 123,
+        "minDownloadMbps": 123,
+        "minUploadMbps": 123,
+        "minVCPUPerGPU": 2,
+        "name": "event-pod-{event_id}",
+        "networkVolumeId": "",
+        "ports": ["8888/http", "22/tcp"],
+        "supportPublicIp": True,
+        "templateId": "",
+        "volumeInGb": 20,
+        "volumeMountPath": "/workspace"
+    }
+
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('RUNPOD_API_KEY')}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+
+    print("RunPod API response:", response.status_code, response.text)
+
+    if response.status_code == 200 or response.status_code == 201:
+        data = response.json()
+        pod_id = data.get("id")
+        print(f"Pod created with ID: {pod_id}")
+        return pod_id
+    else:
+        print("Failed to create pod")
+        return None
+    
+def hourly_job():
+    events = database.get_match_events_for_today()
+    
+    if len(events) > 0:
+        for event in events:
+            start_time = event['start_date']
+            time_now = datetime.now(start_time.tzinfo)
+
+            time_diff = start_time - time_now
+
+            if timedelta(minutes=0) < time_diff <= timedelta(hours=1):
+                if database.is_gpu_task_running_for_entity("event", event['id']):
+                    return
+                else:
+                    results = create_gpu_task_for_event(event['id'])
+                    print(f"Then what is results {results}")
+                    # database.update_gpu_task_for_event_start_soon("event", event['id'], "pod_id", "running")
+            else:
+                print(f"[{datetime.now()}] Skipping Event ID {event['id']}, starts in {time_diff}. Not in 1-hour window.")
+    else:
+        print(f"[{datetime.now()}] No events found today.")
+
+def start_hourly_scheduler():
+    # Update to be every 15 minutes
+    schedule.every(15).seconds.do(hourly_job)
 
     while True:
         schedule.run_pending()

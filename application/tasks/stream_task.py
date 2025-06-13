@@ -20,7 +20,6 @@ from .. import celery_config
 import streamlink
 from ultralytics import YOLO
 import threading
-from ..services.scheduler import start_scheduler
 from datetime import datetime
 from ..config.database import Database
 from ..config.firebase import initialize_firebase

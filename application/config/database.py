@@ -1,6 +1,7 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from datetime import date, datetime
 
 class Database:
     def __init__(self):
@@ -67,3 +68,65 @@ class Database:
         except Exception as e:
             print(f"Error executing SELECT query: {e}")
             return None
+        
+    def get_match_events_for_today(self):
+        if not self.conn:
+            print("No database connection.")
+            return []
+        try:
+            today = date.today()
+            with self.conn.cursor() as cursor:
+                query = """
+                    SELECT id, start_date, time_limit
+                    FROM events
+                    WHERE DATE(start_date) = %s
+                """
+                cursor.execute(query, (today,))
+                results = cursor.fetchall()
+                return results if results else []
+        except Exception as e:
+            print(f"Error executing SELECT query: {e}")
+            return []
+
+    def update_gpu_task_for_event_start_soon(self, entity_type, entity_id, pod_id, status, stopped_at=None):
+        if not self.conn:
+            print("No database connection.")
+            return []
+        if stopped_at is None:
+            stopped_at = datetime.utcnow()
+        started_at = datetime.utcnow()
+        
+        try:
+            with self.conn.cursor() as cursor:
+                query = """
+                INSERT INTO gpu_task_runs (
+                    entity_type, entity_id, pod_id, started_at, stopped_at, status, created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (entity_type, entity_id, pod_id)
+                DO UPDATE SET
+                    status = EXCLUDED.status,
+                    stopped_at = EXCLUDED.stopped_at,
+                    updated_at = CURRENT_TIMESTAMP;
+            """
+                cursor.execute(query, (entity_type, entity_id, pod_id, started_at, stopped_at, status))
+                self.conn.commit()
+                print(f"GPU task updated for {entity_type} ID {entity_id} with status {status}.")
+        except Exception as e:
+            print(f"Error updating GPU task for {entity_type} ID {entity_id}: {e}")
+
+    def is_gpu_task_running_for_entity(self, entity_type, entity_id):
+        if not self.conn:
+            print("No database connection.")
+            return False
+        try:
+            with self.conn.cursor() as cursor:
+                query = """
+                SELECT 1 FROM gpu_task_runs
+                WHERE entity_type = %s AND entity_id = %s AND status IN ('running')
+                LIMIT 1
+                """
+                cursor.execute(query, (entity_type, entity_id))
+                return cursor.fetchone() is not None
+        except Exception as e:
+            print(f"Error checking GPU task status for {entity_type} ID {entity_id}: {e}")
+            return False
