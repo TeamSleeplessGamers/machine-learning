@@ -3,7 +3,6 @@ import pandas as pd
 import time
 from ..services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
-from ..services.machine_learning import detect_text_with_api_key
 import pytesseract
 import os
 from firebase_admin import db
@@ -11,20 +10,63 @@ import cv2
 import hashlib
 import pytz
 import hmac
+import yaml
 import logging
+from ..tasks.stream_task import process_twitch_stream
 from ..utils.heatmap_generator import generate_heatmap
 import requests
 import csv
+from datetime import datetime, timedelta
+from .. import celery_config
+import streamlink
+from ultralytics import YOLO
 import threading
 from ..services.scheduler import start_scheduler
 from datetime import datetime
 from ..config.database import Database
+from ..config.firebase import initialize_firebase
+from ..utils.delivery import process_video, number_detector_2
+from ..utils.utils import calc_sg_score
 
 database = Database()
 conn = database.get_connection()
 
 threshold = 10 
 routes_bp = Blueprint('routes', __name__)
+
+# Load game config (with error handling)
+try:
+    with open('../../game-config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    print("Warning: game-config.yaml not found. Using default configuration.")
+    config = {}  # Default empty config if file is missing
+except yaml.YAMLError as e:
+    print(f"Warning: Error parsing game-config.yaml: {e}. Using default configuration.")
+    config = {}  # Default empty config if YAML is invalid
+
+
+# Twitch API Credentials
+TWITCH_CLIENT_ID = "wslbro47rnh8bo8y3tl2anw0i86vbe"
+TWITCH_CLIENT_SECRET = "0irkrym9153ewkcvxjrivfzlht0hxk"
+TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
+
+# Load YOLO model with dynamic path
+model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'model', 'score-detector-3.pt')
+model = YOLO(model_path)
+
+def get_twitch_access_token():
+    payload = {
+        'client_id': TWITCH_CLIENT_ID,
+        'client_secret': TWITCH_CLIENT_SECRET,
+        'grant_type': 'client_credentials'
+    }
+    response = requests.post(TWITCH_OAUTH_URL, data=payload)
+    if response.status_code == 200:
+        return response.json()['access_token']
+    else:
+        raise Exception(f"Failed to get Twitch Access Token: {response.text}")
+
 
 @routes_bp.route('/')
 def index():
@@ -289,6 +331,7 @@ def match_template_spectating_route(event_id):
         logging.info(f"Starting process recording for {twitch_channel}")
         recorder = TwitchRecorder(twitch_channel, event_id, user_id)
         recorder.process_warzone_video_stream_info()  # Starts the thread
+
         # Immediately respond that the process has started
         return jsonify({
             'status': 'success',
@@ -323,6 +366,49 @@ def generate_and_serve_heatmap():
     else:
         return jsonify({'message': 'Failed to generate heatmap'}), 500
 
+# Route to trigger stream processing
+@routes_bp.route('/api/process-stream', methods=['POST'])
+def process_stream():
+    data = request.get_json()
+    username = data.get('username')
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+    
+    user_Id = data.get('userId')
+    if not user_Id:
+        return jsonify({'error': 'User Id is required'}), 400
+    
+    
+    event_Id = data.get('eventId')
+    if not event_Id:
+        return jsonify({'error': 'Event Id is required'}), 400
+    
+    match_duration = database.get_match_duration_by_event_id(event_Id)
+
+    if not match_duration:
+        return jsonify({'error': 'Match Limit is required'}), 400
+    
+    try:
+        access_token = get_twitch_access_token()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    twitch_api_url = f"https://api.twitch.tv/helix/streams?user_login={username}"
+    headers = {
+        'Client-ID': TWITCH_CLIENT_ID,
+        'Authorization': f'Bearer {access_token}'
+    }
+    response = requests.get(twitch_api_url, headers=headers)
+    if response.status_code != 200 or not response.json()['data']:
+        return jsonify({'error': f'{username} is not live on Twitch'}), 409
+
+    try:
+        # Enqueue the task to Celery
+        task = process_twitch_stream.delay(username, user_Id, event_Id, match_duration)
+        return jsonify({'task_id': str(task.id), 'status': 'Processing started'}), 202
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+                          
 def start_scheduler_thread():
     scheduler_thread = threading.Thread(target=start_scheduler)
     scheduler_thread.daemon = True
