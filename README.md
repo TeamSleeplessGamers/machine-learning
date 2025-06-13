@@ -12,7 +12,7 @@ su --login sleepless
 
 2. Navigate to the Project Directory
 
-Move to the correct directory where the project is stored:
+Move to the correct directory where the project's stored:
 
 cd /home/sleepless/environments/machine_learning
 

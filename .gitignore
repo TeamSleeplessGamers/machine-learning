@@ -16,3 +16,4 @@ frames_processed/
 cod-data
 **/__pycache__/
 venv/
+scripts/

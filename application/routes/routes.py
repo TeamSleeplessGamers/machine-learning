@@ -410,8 +410,9 @@ def process_stream():
 
 
 # Celery task to process the Twitch stream
-@celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10)
+@celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10, queue="gpu_tasks")
 def process_twitch_stream(self, username, user_id, event_id, match_duration):
+    # heavy GPU processing here
     try:
         initialize_firebase()
         spectating_state_map = {}
