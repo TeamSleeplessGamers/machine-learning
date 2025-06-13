@@ -18,3 +18,5 @@ celery.conf.update(
     result_serializer='json',
     accept_content=['json'],
 )
+
+from application.tasks import stream_task
