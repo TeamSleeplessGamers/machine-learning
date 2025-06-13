@@ -401,86 +401,92 @@ def process_stream():
     if response.status_code != 200 or not response.json()['data']:
         return jsonify({'error': f'{username} is not live on Twitch'}), 409
 
-    # Enqueue the task to Celery
-    task = process_twitch_stream.delay(username, user_Id, event_Id, match_duration)
-    return jsonify({'task_id': str(task.id), 'status': 'Processing started'}), 202
+    try:
+        # Enqueue the task to Celery
+        task = process_twitch_stream.delay(username, user_Id, event_Id, match_duration)
+        return jsonify({'task_id': str(task.id), 'status': 'Processing started'}), 202
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # Celery task to process the Twitch stream
-@celery_config.celery.task
-def process_twitch_stream(username, user_id, event_id, match_duration):
-    initialize_firebase()
-    spectating_state_map = {}
+@celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10)
+def process_twitch_stream(self, username, user_id, event_id, match_duration):
+    try:
+        initialize_firebase()
+        spectating_state_map = {}
 
-    # Local state variables (no multiprocessing needed)
-    match_count = 0
-    match_count_updated = 1
-    end_match_start_time = 0.0
-    flag = False
+        # Local state variables (no multiprocessing needed)
+        match_count = 0
+        match_count_updated = 1
+        end_match_start_time = 0.0
+        flag = False
 
-    # Stream duration: 4 hours (or from config if available)
-    end_time = datetime.now() + timedelta(minutes=match_duration)
+        # Stream duration: 4 hours (or from config if available)
+        end_time = datetime.now() + timedelta(minutes=match_duration)
 
-    # Twitch stream URL
-    streams = streamlink.streams(f"https://www.twitch.tv/{username}")
-    if not streams:
-        raise Exception("Could not access Twitch stream")
-    stream_url = streams["best"].url
+        # Twitch stream URL
+        streams = streamlink.streams(f"https://www.twitch.tv/{username}")
+        if not streams:
+            raise Exception("Could not access Twitch stream")
+        stream_url = streams["best"].url
 
-    # Open the stream using OpenCV
-    cap = cv2.VideoCapture(stream_url)
-    if not cap.isOpened():
-        raise Exception("Could not open Twitch stream")
+        # Open the stream using OpenCV
+        cap = cv2.VideoCapture(stream_url)
+        if not cap.isOpened():
+            raise Exception("Could not open Twitch stream")
 
-    frame_count = 0
+        frame_count = 0
 
-    while datetime.now() < end_time:
-        ret, frame = cap.read()
-        if not ret:
-            continue
+        while datetime.now() < end_time:
+            ret, frame = cap.read()
+            if not ret:
+                continue
 
-        frame_count += 1
+            frame_count += 1
 
-        # Only process every 90th frame (assuming ~30 FPS ≈ 3 seconds)
-        if frame_count % 90 != 0:
-            continue
+            # Only process every 90th frame (assuming ~30 FPS ≈ 3 seconds)
+            if frame_count % 90 != 0:
+                continue
 
-        match_state = handle_match_state(frame)
-        spectating_pattern_found = match_state == "spectating"
-        state_key = (user_id, event_id)
-        last_state = spectating_state_map.get(state_key)
+            match_state = handle_match_state(frame)
+            spectating_pattern_found = match_state == "spectating"
+            state_key = (user_id, event_id)
+            last_state = spectating_state_map.get(state_key)
 
-        if last_state != spectating_pattern_found:
-            update_firebase(user_id, event_id, spectating_pattern_found)
-            spectating_state_map[state_key] = spectating_pattern_found
+            if last_state != spectating_pattern_found:
+                update_firebase(user_id, event_id, spectating_pattern_found)
+                spectating_state_map[state_key] = spectating_pattern_found
 
-        if spectating_pattern_found:
-            return
+            if spectating_pattern_found:
+                return
 
-        if end_match_start_time != 0.0:
-            elapsed_time = time.time() - end_match_start_time
-            if elapsed_time > 30:
-                flag = False
-                end_match_start_time = 0.0
+            if end_match_start_time != 0.0:
+                elapsed_time = time.time() - end_match_start_time
+                if elapsed_time > 30:
+                    flag = False
+                    end_match_start_time = 0.0
 
-        if match_state == 'start_match':
-            if match_count_updated == 1:
-                match_count_updated = 0
+            if match_state == 'start_match':
+                if match_count_updated == 1:
+                    match_count_updated = 0
 
-        elif isinstance(match_state, tuple) and match_state[0] == 'in_match' and end_match_start_time == 0.0:
-            if match_count_updated == 1:
-                match_count_updated = 0
-            _, detected_regions = match_state
-            process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions)
+            elif isinstance(match_state, tuple) and match_state[0] == 'in_match' and end_match_start_time == 0.0:
+                if match_count_updated == 1:
+                    match_count_updated = 0
+                _, detected_regions = match_state
+                process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions)
 
-        elif match_state == 'end_match' and not flag:
-            if match_count_updated == 0:
-                update_match_count(event_id, user_id, match_count)
-                match_count_updated = 1
-                end_match_start_time = time.time()
-            flag = True
-
-    cap.release()
+            elif match_state == 'end_match' and not flag:
+                if match_count_updated == 0:
+                    update_match_count(event_id, user_id, match_count)
+                    match_count_updated = 1
+                    end_match_start_time = time.time()
+                flag = True
+        cap.release()
+    except Exception as e:
+        logging.error(f"Error processing Twitch stream: {e}")
+        raise self.retry(exc=e)
 
 
 def process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions):

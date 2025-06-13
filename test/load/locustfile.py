@@ -3,10 +3,10 @@ import json
 import random
 
 class WebsiteUser(HttpUser):
-    wait_time = between(3, 10)  # seconds between tasks
+    wait_time = between(2, 10)  # seconds between tasks
     twitch_users = [
-        "hisokat42", "knight", "mirreyTv", "tenux_official_", "zdark",
-        "vidgunn", "aydan", "repullze", "stolenbr", "mizitw"
+        "aydan", "aydan", "aydan", "aydan", "aydan",
+        "aydan", "aydan", "aydan", "aydan", "aydan"
     ]
     
     @task
