@@ -9,7 +9,7 @@ class Database:
 
     def initialize_database(self):
         try:
-            self.database_url = os.environ['DATABASE_URL']
+            self.database_url = os.environ.get('DATABASE_URL')
             self.conn = psycopg2.connect(
                 self.database_url,
                 cursor_factory=RealDictCursor
@@ -53,3 +53,17 @@ class Database:
         except Exception as e:
             print(f"Error executing SELECT query: {e}")
             return {}
+    def get_match_duration_by_event_id(self, event_id):
+        if not self.conn:
+            print("No database connection.")
+            return None
+        try:
+            with self.conn.cursor() as cursor:
+                query = "SELECT time_limit FROM events WHERE id = %s"
+                cursor.execute(query, (event_id,))
+                result = cursor.fetchone()
+                time_limit = result['time_limit']
+                return time_limit if result else None
+        except Exception as e:
+            print(f"Error executing SELECT query: {e}")
+            return None

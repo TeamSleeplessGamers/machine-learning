@@ -1,16 +1,12 @@
+import os
 from flask import Flask
 from flask_cors import CORS
 from .config.firebase import initialize_firebase
-import pytesseract
-
+from dotenv import load_dotenv
 from .routes.routes import routes_bp
-import cv2
 
 def create_app():
-    """Factory to create the Flask application.
-    
-    :return: A `Flask` application instance.
-    """
+    load_dotenv()
     app = Flask(__name__)
 
     try:
@@ -19,7 +15,6 @@ def create_app():
         app.logger.error(f"Error initializing Firebase: {e}")
 
     CORS(app, origins='*')
-
     app.register_blueprint(routes_bp)
 
     return app

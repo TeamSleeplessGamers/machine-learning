@@ -1,5 +1,4 @@
 import cv2
-import pytesseract
 import time
 import logging
 import re
@@ -10,7 +9,7 @@ from datetime import datetime, timedelta
 from multiprocessing import Process, Manager, Queue, Value, Lock
 from queue import Empty
 from ..services.machine_learning import detect_text_with_api_key
-from ..utils.delivery import process_video
+from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score
 
 logging.basicConfig(level=logging.INFO)
@@ -67,42 +66,44 @@ def update_match_count(event_id, user_id, match_count):
     except Exception as e:
         logging.error(f"Error updating match count for user {str(user_id)} in event {str(event_id)}: {e}")
 
-def init_data(event_id, user_id, max_retries=3):
+def init_data(event_id, user_id, team_id=None, max_retries=3):
     """
     Initialize match_0 data in Firebase for a given event and user with default values.
     
     Args:
         event_id (str): The event ID.
         user_id (str): The user ID.
+        team_id (str, optional): The team ID to store at the user level (not in matchHistory).
         max_retries (int): The maximum number of retries if the operation fails.
     """
-    # Default values for the first match entry
-    default_data = {
-        'ranking': 0,
-        'killCount': 0,
-        'sgScore': 0
-    }
-
-    # Define the Firebase path for match history
-    path = f'event-{event_id}/{user_id}/matchHistory'
-    
-    db_ref = db.reference(path)
+    # Firebase path to the user's event data
+    user_path = f'event-{event_id}/{user_id}'
+    db_ref = db.reference(user_path)
 
     for attempt in range(max_retries):
         try:
-            # Fetch current match history object from Firebase
-            current_data = db_ref.get()
+            # Fetch current user-level data
+            current_data = db_ref.get() or {}
 
-            if current_data is None:
-                current_data = {}  # Initialize if empty
+            # Only set teamId once at the top level (if provided and not already present)
+            if team_id is not None and 'teamId' not in current_data:
+                current_data['teamId'] = team_id
 
-            # Set initial match_0 data
-            current_data['match_0'] = default_data
+            # Set default match_0 data under matchHistory
+            if 'matchHistory' not in current_data:
+                current_data['matchHistory'] = {}
 
-            # Update the Firebase with the new match data
+            current_data['matchHistory']['match_0'] = {
+                'ranking': 0,
+                'killCount': 0,
+                'sgScore': 0
+            }
+
+            # Write updated data back to Firebase
             db_ref.set(current_data)
+
             print(f"Initialized match_0 data for {user_id} in event {event_id}")
-            break  # Exit the loop if the operation is successful
+            break
 
         except Exception as e:
             logging.error(f"Error initializing match data: {e}. Attempt {attempt + 1} of {max_retries}.")
@@ -194,33 +195,21 @@ def match_text_with_known_words(text, known_words):
     return ' '.join(matched_words)
 
 def handle_match_state(frame):
-    # Define the keywords as a regex pattern
-    VICTORY_KEYWORDS = ["WARZONE VICTORY", "WARZONE DEFEAT", "FINAL KILL"]
-    START_MATCH_KEYWORDS = ["ENTERING THE WARZONE", "DEPLOYMENT WILL BEGIN IN"]
-    AD_KEYWORDS = ["COMMERCIAL"]
-    SPECTATING_KEYWORDS = ["SPECTATING"]
+    filename = f"frames/frame.jpg"
+    #cv2.imwrite(filename, frame)
+    detected_regions = process_video(frame)
 
-    # Use the API function instead of pytesseract
-    detected_text = detect_text_with_api_key(frame)
-    first_text = detected_text[0] if detected_text else ""
-
-    # Compile the regex pattern for VICTORY_KEYWORDS
-    victory_pattern = re.compile('|'.join([re.escape(keyword) for keyword in VICTORY_KEYWORDS]), re.IGNORECASE)
-    start_match_pattern = re.compile('|'.join([re.escape(keyword) for keyword in START_MATCH_KEYWORDS]), re.IGNORECASE)
-    ad_pattern = re.compile('|'.join([re.escape(keyword) for keyword in AD_KEYWORDS]), re.IGNORECASE)
-    spectating_pattern = re.compile('|'.join([re.escape(keyword) for keyword in SPECTATING_KEYWORDS]), re.IGNORECASE)
-    
-    # Use regex to match the conditions
-    if start_match_pattern.search(first_text):
+    if 'user_deploying' in detected_regions:
         return "start_match"
-    elif victory_pattern.search(first_text):
+    elif 'final_kill_cam' in detected_regions or 'warzone_victory' in detected_regions or 'warzone_defeat' in detected_regions:
         return "end_match"
-    elif ad_pattern.search(first_text):
-        return "ad_displaying"
-    elif spectating_pattern.search(first_text):
+    elif 'user_spectating' in detected_regions:
         return "spectating"
+    elif 'team_ranking' in detected_regions or 'match_users_left' in detected_regions or 'user_kills' in detected_regions:
+        in_match_regions = {k: v for k, v in detected_regions.items() if k in {'team_ranking', 'match_users_left', 'user_kills'}}
+        return ("in_match", in_match_regions)
     else:
-        return "in_match"
+        return "ad_displaying"
 
 def process_frame(frame, event_id, user_id, match_count, match_count_updated, frame_count, flag, end_match_start_time):
     frame_height, frame_width = frame.shape[:2]
@@ -229,9 +218,9 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
     if frame_width != expected_width or frame_height != expected_height:
         frame = cv2.resize(frame, (expected_width, expected_height))
 
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    match_state = handle_match_state(gray_frame)
-
+    match_state = handle_match_state(frame)
+    output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_before_{frame_count}_class.jpg"
+    #cv2.imwrite(output_filename, frame)  
     spectating_pattern_found = match_state == "spectating"
     state_key = (user_id, event_id)
     last_state = spectating_state_map.get(state_key, None)
@@ -253,11 +242,12 @@ def process_frame(frame, event_id, user_id, match_count, match_count_updated, fr
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
-    elif match_state == 'in_match' and end_match_start_time is None:
+    elif isinstance(match_state, tuple) and match_state[0] == 'in_match' and end_match_start_time.value == 0.0:
         with match_count_updated_lock:
             if match_count_updated.value == 1:
                 match_count_updated.value = 0
-        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count)
+        _, detected_regions = match_state
+        process_frame_scores(event_id, user_id, match_count.value, frame, frame_count, detected_regions)
     elif match_state == 'end_match' and not flag.value:
         with match_count_updated_lock:
             if match_count_updated.value == 0:
@@ -291,7 +281,7 @@ def frame_worker(frame_queue, event_id, user_id, match_count, match_count_update
     logging.info(f"Total execution time of frame_worker: {total_elapsed_time:.4f} seconds")
     logging.info("Frame worker exiting")
 
-def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
+def process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions):
     """
     Processes the top-right corner of a frame, resizes it, and detects text using a given text detection function.
 
@@ -305,36 +295,31 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     Returns:
         None
     """
-    try:
-        # Step 1: Get contrast images and scores from the video frame
-        selected_contrast_images, score1, score2 = process_video(frame)
-        
+    try:        
         # Initialize a dictionary to store the combined results
         combined_results = {}
         
         # Step 2: Process each detected class and image
-        for cls, image in selected_contrast_images.items():
+        for cls, image in detected_regions.items():
             if image is not None and image.size > 0:
-                # Perform OCR and extract the first detected value
-                results = detect_text_with_api_key(image)
-                detected_text = results[0] if results else None  # Default to None if no text detected
-                
+                results = number_detector_2(image) # detect_text_with_api_key(image)
+                print(f"This {frame_count} is result for {cls}: {results}")
+                filename = f"frames_processed/frame_{frame_count}.jpg"
+                #cv2.imwrite(filename, image)
                 # Check if detected_text is a valid number
-                if detected_text is None or not detected_text.isdigit():
-                    detected_text = None  # Set to None if not a valid number
+                if results is None:
+                    results = None  # Set to None if not a valid number
                 
                 # Add the result to the combined_results dictionary
-                combined_results[cls] = detected_text
-
+                combined_results[cls] = results
                 # Debugging: Save the image
                 #output_filename = f"/Users/trell/Projects/machine-learning-2/frames_processed/processed_frame_{frame_count}_class_{cls}.jpg"
                 #cv2.imwrite(output_filename, image)  
             else:
-                print(f"No valid detection for Class {cls} | Score1: {score1}, Score2: {score2}")
-        
+                print(f"No valid detection for Class {cls}")
         # Step 3: Extract ranking from the combined results (using cls 0 as the ranking)
-        ranking = combined_results.get(0, None)  # Get ranking from class 0 or set to None if not present
-        kills_count = combined_results.get(1, None)  # Use class 1 for kills count or set to None if not present
+        ranking = combined_results.get('team_ranking', None)
+        kills_count = combined_results.get('user_kills', None)
         
         update_firebase_match_ranking_and_score(
             user_id, event_id, match_count, ranking, kills_count
@@ -343,13 +328,7 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count):
     except Exception as e:
         print(f"Error processing frame {frame_count}: {e}")
     
-def match_template_spectating_in_video(video_path, event_id=None, user_id=None):
-    # This is the initialization of data for the match template function
-    init_data(event_id, user_id)
-
-    # Use the current time as the start time
-    start_datetime = datetime.now()
-
+def match_template_spectating_in_video(start_datetime, video_path, event_id=None, user_id=None, team_id=None):
     with Manager() as manager:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():

@@ -2,6 +2,7 @@
 /lib
 /bin
 .env
+.env.production
 /recorded
 /processed
 /output-frames
@@ -14,3 +15,5 @@ frames/
 frames_processed/
 cod-data
 **/__pycache__/
+venv/
+scripts/machine-learning
