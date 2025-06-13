@@ -10,11 +10,11 @@ celery = Celery(
     backend=os.environ.get("REDIS_URL")
 )
 
-# Optional: load additional settings from a separate config
 celery.conf.update(
     task_serializer='json',
     result_serializer='json',
     accept_content=['json'],
 )
 
-celery.autodiscover_tasks(['application.tasks'])
+# Force import to ensure task is registered
+from application.tasks import stream_task

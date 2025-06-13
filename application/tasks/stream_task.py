@@ -26,7 +26,6 @@ from ..config.database import Database
 from ..config.firebase import initialize_firebase
 from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score
-from celery import shared_task
 
 # Celery task to process the Twitch stream
 @celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10, queue="gpu_tasks")
