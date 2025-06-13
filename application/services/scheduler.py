@@ -188,20 +188,32 @@ def schedule_shutdown_for_event(event_id, pod_id, time_limit_minutes):
             break
 
 def shutdown_gpu_task(event_id, pod_id):
-    try:
-        response = requests.post(
-            f"https://api.runpod.io/v1/pods/{pod_id}/terminate",
-            headers={"Authorization": f"Bearer {os.getenv('RUNPOD_API_KEY')}"}
-        )
-        if response.status_code == 200:
-            print(f"Successfully shut down pod {pod_id} for event {event_id}.")
-        else:
-            print(f"Failed to shut down pod {pod_id}: {response.text}")
-    except Exception as e:
-        print(f"Error shutting down pod {pod_id}: {e}")
+    headers = {"Authorization": f"Bearer {os.environ.get('RUNPOD_API_KEY')}"}
 
-    database.update_gpu_task_for_event_start_soon("event", event_id, pod_id, "stopped", stopped_at=datetime.utcnow())
-        
+    try:
+        terminate_response = requests.delete(
+            f"https://rest.runpod.io/v1/pods/{pod_id}",
+            headers=headers
+        )
+        print(f"[{datetime.now()}] Terminate response: {terminate_response.status_code} - {terminate_response}")
+
+        if terminate_response.status_code == 200:
+            print(f"✅ Successfully terminated pod {pod_id} for event {event_id}.")
+        else:
+            print(f"❌ Failed to terminate pod {pod_id}: {terminate_response.text}")
+
+    except Exception as e:
+        print(f"⚠️ Error shutting down pod {pod_id}: {e}")
+
+    # Step 3: Update database
+    try:
+        database.update_gpu_task_for_event_start_soon(
+            "event", event_id, pod_id, "stopped", stopped_at=datetime.utcnow()
+        )
+        print(f"📦 Updated database: pod {pod_id} marked as stopped.")
+    except Exception as db_error:
+        print(f"❗ Error updating DB for pod {pod_id}: {db_error}")
+
 def fifteen_minute_job():
     events = database.get_match_events_for_today()
     
@@ -225,11 +237,10 @@ def fifteen_minute_job():
 
             if is_gpu_task_is_running_for_entity:
                 pod_id = database.get_gpu_pod_id_for_entity("event", event['id'])
-                if pod_id:
+                if pod_id and event['time_limit'] is not None:
                     time_limit_minutes = event['time_limit']
-                    if time_limit_minutes is not None:
-                        schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes)
-                        return
+                    schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes)
+                    return
     else:
         return
 
