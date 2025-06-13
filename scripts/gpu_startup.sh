@@ -13,8 +13,8 @@ python3 -m venv venv
 source venv/bin/activate
 
 echo "=== Installing Python dependencies ==="
-#pip install --upgrade pip
-#pip install -r requirements.txt
+pip install --upgrade pip
+pip install -r requirements.txt
 
 echo "=== Copying .env file into project directory ==="
 cp ../.env .env
