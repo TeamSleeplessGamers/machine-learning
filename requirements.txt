@@ -2,6 +2,7 @@ ultralytics
 easyocr
 celery
 runpod
+redis
 appdirs==1.4.4
 attrs==23.2.0
 beautifulsoup4==4.12.3
