@@ -92,8 +92,6 @@ class Database:
         if not self.conn:
             print("No database connection.")
             return []
-        if stopped_at is None:
-            stopped_at = datetime.utcnow()
         started_at = datetime.utcnow()
         
         try:
@@ -127,6 +125,27 @@ class Database:
                 """
                 cursor.execute(query, (entity_type, entity_id))
                 return cursor.fetchone() is not None
+        except Exception as e:
+            print(f"Error checking GPU task status for {entity_type} ID {entity_id}: {e}")
+            return False
+
+    def get_gpu_pod_id_for_entity(self, entity_type, entity_id):
+        if not self.conn:
+            print("No database connection.")
+            return False
+        try:
+            with self.conn.cursor() as cursor:
+                query = """
+                SELECT pod_id FROM gpu_task_runs
+                WHERE entity_type = %s AND entity_id = %s AND status IN ('running')
+                LIMIT 1
+                """
+                cursor.execute(query, (entity_type, entity_id))
+                result = cursor.fetchone()
+                
+                if result:
+                    return result['pod_id']
+                return None
         except Exception as e:
             print(f"Error checking GPU task status for {entity_type} ID {entity_id}: {e}")
             return False

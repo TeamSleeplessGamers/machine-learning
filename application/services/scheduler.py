@@ -6,11 +6,12 @@ import requests
 from .twitch_oauth import get_twitch_oauth_token
 from ..config.database import Database
 from dotenv import dotenv_values
-
+import redis
 
 database = Database()
 conn = database.get_connection()
- 
+r = redis.Redis.from_url(os.environ.get("REDIS_URL"))
+
 def list_of_sg_subscribed_twitch_streamers():
     twitch_client_id = os.environ.get('CLIENT_ID')
     headers = {
@@ -129,44 +130,32 @@ def start_scheduler():
         
 
 def create_gpu_task_for_event(event_id): 
-    print("handle creating gpu")
-
     url = "https://rest.runpod.io/v1/pods"
     env = dotenv_values(".env")
     
     payload = {
-        "allowedCudaVersions": ["12.8"],
-        "cloudType": "SECURE",
         "computeType": "GPU",
-        "containerDiskInGb": 50,
-        "containerRegistryAuthId": "clzdaifot0001l90809257ynb",
-        "countryCodes": ["US"],
+        "gpuCount": 1,
+        "gpuTypePriority": "availability",
+        "cloudType": "SECURE",
         "cpuFlavorPriority": "availability",
-        "dataCenterIds": ["US-DE-1"],
         "dataCenterPriority": "availability",
+        "countryCodes": ["US"],
+        "vcpuCount": 6,
+        "minRAMPerGPU": 24,
+        "containerDiskInGb": 40,
+        "volumeInGb": 20,
+        "volumeMountPath": "/workspace",
+        "imageName": "runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04",
+        "env": env,
         "dockerEntrypoint": [],
         "dockerStartCmd": [],
-        "gpuTypeIds": ["NVIDIA L4"], 
-        "vcpuCount": 12,             
-        "minRAMPerGPU": 55,            
-        "volumeInGb": 20,     
-        "env": env,
-        "globalNetworking": True,
-        "gpuCount": 2,
-        "gpuTypePriority": "availability",
-        "interruptible": False,
-        "locked": False,
-        "minDiskBandwidthMBps": 123,
-        "minDownloadMbps": 123,
-        "minUploadMbps": 123,
-        "minVCPUPerGPU": 2,
-        "name": "event-pod-{event_id}",
-        "networkVolumeId": "",
-        "ports": ["8888/http", "22/tcp"],
+        "name": f"event-pod-{event_id}",
         "supportPublicIp": True,
-        "templateId": "",
-        "volumeInGb": 20,
-        "volumeMountPath": "/workspace"
+        "interruptible": False,
+        "globalNetworking": True,
+        "locked": False,
+        "ports": ["8888/http", "22/tcp"]
     }
 
     headers = {
@@ -176,18 +165,44 @@ def create_gpu_task_for_event(event_id):
 
     response = requests.post(url, json=payload, headers=headers)
 
-    print("RunPod API response:", response.status_code, response.text)
-
     if response.status_code == 200 or response.status_code == 201:
         data = response.json()
         pod_id = data.get("id")
-        print(f"Pod created with ID: {pod_id}")
         return pod_id
     else:
-        print("Failed to create pod")
         return None
-    
-def hourly_job():
+
+
+def schedule_shutdown_for_event(event_id, pod_id, time_limit_minutes):
+    time_limit = timedelta(minutes=time_limit_minutes)
+    start_time = datetime.now()
+
+    while True:
+        current_time = datetime.now()
+        elapsed = current_time - start_time
+        remaining = time_limit - elapsed
+
+        if remaining.total_seconds() <= 0:
+            print(f"[{datetime.now()}] Time is up for Event {event_id}, shutting down.")
+            shutdown_gpu_task(event_id, pod_id)
+            break
+
+def shutdown_gpu_task(event_id, pod_id):
+    try:
+        response = requests.post(
+            f"https://api.runpod.io/v1/pods/{pod_id}/terminate",
+            headers={"Authorization": f"Bearer {os.getenv('RUNPOD_API_KEY')}"}
+        )
+        if response.status_code == 200:
+            print(f"Successfully shut down pod {pod_id} for event {event_id}.")
+        else:
+            print(f"Failed to shut down pod {pod_id}: {response.text}")
+    except Exception as e:
+        print(f"Error shutting down pod {pod_id}: {e}")
+
+    database.update_gpu_task_for_event_start_soon("event", event_id, pod_id, "stopped", stopped_at=datetime.utcnow())
+        
+def fifteen_minute_job():
     events = database.get_match_events_for_today()
     
     if len(events) > 0:
@@ -196,22 +211,30 @@ def hourly_job():
             time_now = datetime.now(start_time.tzinfo)
 
             time_diff = start_time - time_now
-
+            is_gpu_task_is_running_for_entity = database.is_gpu_task_running_for_entity("event", event['id'])
             if timedelta(minutes=0) < time_diff <= timedelta(hours=1):
-                if database.is_gpu_task_running_for_entity("event", event['id']):
+                is_running = database.is_gpu_task_running_for_entity("event", event['id'])
+                
+                lock_key = f"gpu_lock:{event['id']}"
+                acquired = r.set(lock_key, "1", nx=True, ex=15)  
+                if acquired and is_running is False:
+                    result = create_gpu_task_for_event(event['id'])
+                    if result:
+                        database.update_gpu_task_for_event_start_soon("event", event['id'], "pod_id", "running")
                     return
-                else:
-                    results = create_gpu_task_for_event(event['id'])
-                    print(f"Then what is results {results}")
-                    # database.update_gpu_task_for_event_start_soon("event", event['id'], "pod_id", "running")
-            else:
-                print(f"[{datetime.now()}] Skipping Event ID {event['id']}, starts in {time_diff}. Not in 1-hour window.")
-    else:
-        print(f"[{datetime.now()}] No events found today.")
 
-def start_hourly_scheduler():
-    # Update to be every 15 minutes
-    schedule.every(15).seconds.do(hourly_job)
+            if is_gpu_task_is_running_for_entity:
+                pod_id = database.get_gpu_pod_id_for_entity("event", event['id'])
+                if pod_id:
+                    time_limit_minutes = event['time_limit']
+                    if time_limit_minutes is not None:
+                        schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes)
+                        return
+    else:
+        return
+
+def start_fifteen_minute_scheduler():
+    schedule.every(15).seconds.do(fifteen_minute_job)
 
     while True:
         schedule.run_pending()
