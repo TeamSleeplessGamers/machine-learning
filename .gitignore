@@ -17,3 +17,4 @@ cod-data
 **/__pycache__/
 venv/
 scripts/machine-learning
+development/
