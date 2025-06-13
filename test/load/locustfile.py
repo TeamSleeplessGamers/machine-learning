@@ -3,8 +3,12 @@ import json
 import random
 
 class WebsiteUser(HttpUser):
-    wait_time = between(1, 3)  # seconds between tasks
-
+    wait_time = between(3, 10)  # seconds between tasks
+    twitch_users = [
+        "hisokat42", "knight", "mirreyTv", "tenux_official_", "zdark",
+        "vidgunn", "aydan", "repullze", "stolenbr", "mizitw"
+    ]
+    
     @task
     def index(self):
         self.client.get("/")
@@ -12,15 +16,19 @@ class WebsiteUser(HttpUser):
     @task
     def process_stream(self):
         payload = {
-            "username": f"testuser{random.randint(1,1000)}",
+            "username": random.choice(self.twitch_users),
             "userId": random.randint(1, 1000),
             "eventId": "143"
         }
 
         headers = {"Content-Type": "application/json"}
 
-        self.client.post(
+        response = self.client.post(
             "/api/process-stream",
             data=json.dumps(payload),
             headers=headers
         )
+        
+                
+        print("Status Code:", response.status_code)
+        print("Response Body:", response.text)

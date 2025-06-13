@@ -387,13 +387,11 @@ def process_stream():
     if not match_duration:
         return jsonify({'error': 'Match Limit is required'}), 400
     
-    # Get Twitch Access Token
     try:
         access_token = get_twitch_access_token()
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    # Verify if the Twitch user is live
     twitch_api_url = f"https://api.twitch.tv/helix/streams?user_login={username}"
     headers = {
         'Client-ID': TWITCH_CLIENT_ID,
@@ -401,7 +399,7 @@ def process_stream():
     }
     response = requests.get(twitch_api_url, headers=headers)
     if response.status_code != 200 or not response.json()['data']:
-        return jsonify({'error': f'{username} is not live on Twitch'}), 400
+        return jsonify({'error': f'{username} is not live on Twitch'}), 409
 
     # Enqueue the task to Celery
     task = process_twitch_stream.delay(username, user_Id, event_Id, match_duration)
