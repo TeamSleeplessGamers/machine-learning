@@ -191,19 +191,23 @@ def create_gpu_task_for_event(event_id, index):
     except Exception as e:
         return None, f"Exception occurred: {str(e)}"
 
-def schedule_shutdown_for_event(event_id, pod_id, time_limit_minutes):
-    time_limit = timedelta(minutes=time_limit_minutes)
-    start_time = datetime.now()
-
-    while True:
-        current_time = datetime.now()
-        elapsed = current_time - start_time
-        remaining = time_limit - elapsed
-
-        if remaining.total_seconds() <= 0:
-            print(f"[{datetime.now()}] Time is up for Event {event_id}, shutting down.")
-            shutdown_gpu_task(event_id, pod_id)
-            break
+def schedule_shutdown_for_event(event_id, pod_id, time_limit_minutes, start_time):
+    now = datetime.now(start_time.tzinfo) if start_time.tzinfo else datetime.now()
+    time_diff = start_time - now
+    
+    # If event hasn't started yet, just return or do nothing (wait for next check)
+    if time_diff > timedelta(minutes=0):
+        print(f"Event {event_id} hasn't started yet. Time until start: {time_diff}")
+        return
+    
+    # Event has started, check if time limit is reached
+    elapsed = now - start_time
+    if elapsed >= timedelta(minutes=time_limit_minutes):
+        print(f"Time is up for Event {event_id}, shutting down pod {pod_id}.")
+        shutdown_gpu_task(event_id, pod_id)
+    else:
+        remaining = timedelta(minutes=time_limit_minutes) - elapsed
+        print(f"Event {event_id} running, {remaining} left.")
 
 def shutdown_gpu_task(event_id, pod_id):
     headers = {"Authorization": f"Bearer {os.environ.get('RUNPOD_API_KEY')}"}
@@ -277,7 +281,7 @@ def fifteen_minute_job():
                 if pod_ids and event['time_limit'] is not None:
                     time_limit_minutes = event['time_limit']
                     for pod_id in pod_ids:
-                        schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes)
+                        schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes, start_time)
                 return
 
     else:
