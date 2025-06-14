@@ -30,4 +30,4 @@ done
 
 echo "=== Starting Celery GPU worker ==="
 # Use celery from the virtualenv explicitly
-venv/bin/celery -A application.celery_config.celery worker -Q gpu_tasks_event_${EVENT_ID} --loglevel=info --pool=threads --concurrency=1
+venv/bin/celery -A application.celery_config.celery worker -Q gpu_tasks_event_${EVENT_ID} --loglevel=info --pool=threads --concurrency=8
