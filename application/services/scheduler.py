@@ -258,7 +258,7 @@ def fifteen_minute_job():
         return
 
 def start_fifteen_minute_scheduler():
-    schedule.every(15).seconds.do(fifteen_minute_job)
+    schedule.every(15).minutes.do(fifteen_minute_job)
 
     while True:
         schedule.run_pending()
