@@ -1,36 +1,28 @@
-from flask import Blueprint, request, jsonify, send_file, Response
-import pandas as pd
 import time
 from ..services.twitch_recorder import TwitchRecorder
 from ..services.twitch_oauth import get_twitch_oauth_token
-import pytesseract
-import os
 from firebase_admin import db
 import cv2
-import hashlib
-import pytz
-import hmac
-import yaml
+import os
 import logging
 from ..utils.heatmap_generator import generate_heatmap
-import requests
-import csv
 from datetime import datetime, timedelta
 from .. import celery_config
 import streamlink
-from ultralytics import YOLO
-import threading
+import numpy as np
+import ffmpeg
 from datetime import datetime
 from ..config.firebase import initialize_firebase
 from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score
+
+initialize_firebase()
 
 # Celery task to process the Twitch stream
 @celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10)
 def process_twitch_stream(self, username, user_id, event_id, match_duration):
     # heavy GPU processing here
     try:
-        initialize_firebase()
         spectating_state_map = {}
 
         # Local state variables (no multiprocessing needed)
@@ -39,33 +31,34 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
         end_match_start_time = 0.0
         flag = False
 
-        # Stream duration: 4 hours (or from config if available)
-        end_time = datetime.now() + timedelta(minutes=match_duration)
-
-        # Twitch stream URL
+        end_time = datetime.now() + timedelta(minutes=match_duration if match_duration else 60)
         streams = streamlink.streams(f"https://www.twitch.tv/{username}")
-        if not streams:
-            raise Exception("Could not access Twitch stream")
         stream_url = streams["best"].url
 
-        # Open the stream using OpenCV
-        cap = cv2.VideoCapture(stream_url)
-        if not cap.isOpened():
-            raise Exception("Could not open Twitch stream")
+        cap, process = get_stream_capture(stream_url)
 
+        # If using ffmpeg, get resolution
+        if process:
+            width, height = get_stream_resolution(stream_url)
+        else:
+            print(f"Error probing stream resolution: {e}")
+            width = height = None
+    
         frame_count = 0
 
         while datetime.now() < end_time:
-            ret, frame = cap.read()
-            if not ret:
+            ret, frame = read_frame(cap, process, width, height)
+            if not ret or frame is None:
                 continue
 
             frame_count += 1
-
-            # Only process every 90th frame (assuming ~30 FPS ≈ 3 seconds)
             if frame_count % 90 != 0:
                 continue
 
+            filename = f"frames_processed/frame_{frame_count}.jpg"
+            print(f"Why im not here {filename}")
+            cv2.imwrite(filename, frame)
+    
             match_state = handle_match_state(frame)
             spectating_pattern_found = match_state == "spectating"
             state_key = (user_id, event_id)
@@ -105,7 +98,44 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
         logging.error(f"Error processing Twitch stream: {e}")
         raise self.retry(exc=e)
 
+def get_stream_capture(stream_url):
+    if os.environ.get("ENV") == "production":
+        process = (
+            ffmpeg
+            .input(stream_url, hwaccel='cuda')  # use 'videotoolbox' on macOS, 'cuda' on Linux
+            .output('pipe:', format='rawvideo', pix_fmt='bgr24')
+            .run_async(pipe_stdout=True)
+        )
+        return None, process
 
+    else:
+        # For development, fallback to CPU decoding or use videotoolbox if on macOS
+        process = (
+            ffmpeg
+            .input(stream_url, hwaccel='videotoolbox')  # change as needed
+            .output('pipe:', format='rawvideo', pix_fmt='bgr24')
+            .run_async(pipe_stdout=True)
+        )
+        return None, process
+
+def get_stream_resolution(stream_url):
+    probe = ffmpeg.probe(stream_url)
+    video_stream = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+    return int(video_stream['width']), int(video_stream['height'])
+
+def read_frame(cap, process, width=1280, height=720):
+    if cap:
+        ret, frame = cap.read()
+        return ret, frame
+    elif process:
+        in_bytes = process.stdout.read(width * height * 3)
+        if not in_bytes:
+            return False, None
+        frame = np.frombuffer(in_bytes, np.uint8).reshape([height, width, 3])
+        return True, frame
+    else:
+        return False, None
+    
 def process_frame_scores(event_id, user_id, match_count, frame, frame_count, detected_regions):
     """
     Processes the top-right corner of a frame, resizes it, and detects text using a given text detection function.
