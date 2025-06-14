@@ -161,8 +161,6 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
         for cls, image in detected_regions.items():
             if image is not None and image.size > 0:
                 results = number_detector_2(image) # detect_text_with_api_key(image)
-                print(f"This {frame_count} is result for {cls}: {results}")
-                filename = f"frames_processed/frame_{frame_count}.jpg"
                 #cv2.imwrite(filename, image)
                 # Check if detected_text is a valid number
                 if results is None:
