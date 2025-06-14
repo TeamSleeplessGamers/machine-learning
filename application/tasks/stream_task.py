@@ -55,8 +55,8 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
             if frame_count % 90 != 0:
                 continue
 
-            filename = f"frames_processed/frame_{frame_count}.jpg"
-            cv2.imwrite(filename, frame)
+            #filename = f"frames_processed/frame_{frame_count}.jpg"
+            #cv2.imwrite(filename, frame)
     
             match_state = handle_match_state(frame)
             spectating_pattern_found = match_state == "spectating"
@@ -185,8 +185,6 @@ def process_frame_scores(event_id, user_id, match_count, frame, frame_count, det
         print(f"Error processing frame {frame_count}: {e}")
 
 def handle_match_state(frame):
-    filename = f"frames/frame.jpg"
-    #cv2.imwrite(filename, frame)
     detected_regions = process_video(frame)
 
     if 'user_deploying' in detected_regions:

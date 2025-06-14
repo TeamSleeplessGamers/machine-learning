@@ -1,16 +1,21 @@
 import cv2
 from ultralytics import YOLO
+import torch
 import os
 from ..utils.utils import number_detection_labels, cod_detection_labels
 # Load YOLO model
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
+if torch.cuda.is_available():
+    device = 'cuda'
+else:
+    device = 'cpu'
+   
 # Model path for score-detector.pt, used for primary score detection
 model_path = os.path.join(base_dir, '..', '..', 'model', 'warzone.pt')
 model_path_2 = os.path.join(base_dir, '..', '..', 'model', 'ocr-detector.pt')
-
-model = YOLO(model_path)
-model_2 = YOLO(model_path_2)
+model = YOLO(model_path).to(device)
+model_2 = YOLO(model_path_2).to(device)
 
 
 def process_video(frame):
