@@ -6,6 +6,7 @@ import requests
 from .twitch_oauth import get_twitch_oauth_token
 from ..config.database import Database
 import redis
+import math
 
 database = Database()
 conn = database.get_connection()
@@ -128,7 +129,7 @@ def start_scheduler():
         time.sleep(1)
         
 
-def create_gpu_task_for_event(event_id): 
+def create_gpu_task_for_event(event_id, index):
     url = "https://rest.runpod.io/v1/pods"
     env = {
         "TWITCH_WEBHOOK_URL": "{{ RUNPOD_SECRET_TWITCH_WEBHOOK_URL }}",
@@ -157,7 +158,7 @@ def create_gpu_task_for_event(event_id):
         "cpuFlavorPriority": "availability",
         "dataCenterPriority": "availability",
         "countryCodes": ["US"],
-        "vcpuCount": 6,
+        "vcpuCount": 16,     
         "supportPublicIp": True,
         "minRAMPerGPU": 24,
         "containerDiskInGb": 40,
@@ -166,7 +167,7 @@ def create_gpu_task_for_event(event_id):
         "dockerEntrypoint": ["bash", "/opt/init/run_gpu_setup.sh"],
         "imageName": "mjubil1/sleepless-gpu-worker:v1.0.6",
         "env": env,
-        "name": f"event-pod-{event_id}",
+        "name": f"event-pod-{event_id}-{index}",
         "supportPublicIp": True,
         "interruptible": False,
         "locked": False,
@@ -178,14 +179,17 @@ def create_gpu_task_for_event(event_id):
         "Content-Type": "application/json"
     }
 
-    response = requests.post(url, json=payload, headers=headers)
-
-    if response.status_code == 200 or response.status_code == 201:
-        data = response.json()
-        pod_id = data.get("id")
-        return pod_id
-    else:
-        return None
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code in (200, 201):
+            data = response.json()
+            pod_id = data.get("id")
+            return pod_id, None
+        else:
+            error_msg = f"Error {response.status_code}: {response.text}"
+            return None, error_msg
+    except Exception as e:
+        return None, f"Exception occurred: {str(e)}"
 
 def schedule_shutdown_for_event(event_id, pod_id, time_limit_minutes):
     time_limit = timedelta(minutes=time_limit_minutes)
@@ -229,7 +233,6 @@ def shutdown_gpu_task(event_id, pod_id):
 
 def fifteen_minute_job():
     events = database.get_match_events_for_today()
-    
     if len(events) > 0:
         for event in events:
             start_time = event['start_date']
@@ -243,17 +246,40 @@ def fifteen_minute_job():
                 lock_key = f"gpu_lock:{event['id']}"
                 acquired = r.set(lock_key, "1", nx=True, ex=15)  
                 if acquired and is_running is False:
-                    result = create_gpu_task_for_event(event['id'])
-                    if result:
-                        database.update_gpu_task_for_event_start_soon("event", event['id'], result, "running")
+                    total_emails = 0
+                    vcpu_per_server = 8
+                    max_cpu_usage_per_server = 0.7
+                    tasks_per_server = max_cpu_usage_per_server * vcpu_per_server
+
+                    emails_value = event['emails']
+                    if isinstance(emails_value, str):
+                        emails_list = [email.strip() for email in emails_value.split(',') if email.strip()]
+                    elif isinstance(emails_value, list):
+                        emails_list = [email.strip() for email in emails_value if email.strip()]
+                    else:
+                        emails_list = []
+
+                    total_emails = len(emails_list)
+                      
+                    number_of_servers = math.ceil(total_emails / tasks_per_server)
+                    
+                    for i in range(number_of_servers):
+                        result, error = create_gpu_task_for_event(event['id'], i)
+                        
+                        if result:
+                            database.update_gpu_task_for_event_start_soon("event", event['id'], result, "running")
+                        else:
+                            print(f"Failed to create GPU task for server #{i+1}: {error}")
                     return
 
             if is_gpu_task_is_running_for_entity:
-                pod_id = database.get_gpu_pod_id_for_entity("event", event['id'])
-                if pod_id and event['time_limit'] is not None:
+                pod_ids = database.get_gpu_pod_ids_for_entity("event", event['id'])
+                if pod_ids and event['time_limit'] is not None:
                     time_limit_minutes = event['time_limit']
-                    schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes)
-                    return
+                    for pod_id in pod_ids:
+                        schedule_shutdown_for_event(event['id'], pod_id, time_limit_minutes)
+                return
+
     else:
         return
 
