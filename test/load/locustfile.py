@@ -1,14 +1,20 @@
 from locust import HttpUser, task, between
 import json
 import random
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class WebsiteUser(HttpUser):
     wait_time = between(2, 10)  # seconds between tasks
-    twitch_users = [
-        "aydan", "aydan", "aydan", "aydan", "aydan",
-        "aydan", "aydan", "aydan", "aydan", "aydan"
-    ]
     
+    twitch_users = [
+        "nadeshot", "nadeshot", "nadeshot", "nadeshot", "nadeshot",
+        "nadeshot", "nadeshot", "nadeshot", "nadeshot", "nadeshot"
+    ]
+
     @task
     def index(self):
         self.client.get("/")
@@ -29,6 +35,5 @@ class WebsiteUser(HttpUser):
             headers=headers
         )
         
-                
         print("Status Code:", response.status_code)
         print("Response Body:", response.text)
