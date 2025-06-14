@@ -21,7 +21,6 @@ import streamlink
 from ultralytics import YOLO
 import threading
 from datetime import datetime
-from ..config.database import Database
 from ..config.firebase import initialize_firebase
 from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score

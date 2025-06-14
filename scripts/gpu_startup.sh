@@ -17,14 +17,6 @@ echo "=== Installing Python dependencies ==="
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "=== Copying .env file into project directory ==="
-cp ../.env .env
-
-echo "=== Loading environment variables ==="
-set -a
-source .env
-set +a
-
 echo "=== Copying firebase json file into project directory ==="
 echo "$FIREBASE_KEY_BASE64" | base64 -d > /workspace/firebase-dev.json
 
