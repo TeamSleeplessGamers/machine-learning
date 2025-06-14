@@ -389,12 +389,11 @@ def create_gpu_task():
         "volumeInGb": 20,
         "volumeMountPath": "/workspace",
         "dockerEntrypoint": ["bash", "/opt/init/run_gpu_setup.sh"],
-        "imageName": "mjubil1/sleepless-gpu-worker:v1.0.1",
+        "imageName": "mjubil1/sleepless-gpu-worker:v1.0.3",
         "env": env,
         "name": f"event-pod-{event_id}",
         "supportPublicIp": True,
         "interruptible": False,
-        "globalNetworking": True,
         "locked": False,
         "ports": ["8888/http", "22/tcp"]
     }
