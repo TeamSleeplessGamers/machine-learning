@@ -1,8 +1,11 @@
+import time
+
 # Define multipliers
 TOP_5_MULTIPLIER = 1.25
 TOP_3_MULTIPLIER = 1.5
 VICTORY_MULTIPLIER = 2.0
 
+DEBUG_TIMING = True  # Toggle this to enable/disable logs
 
 def calc_sg_score(kill_count, ranking):
     """
@@ -70,3 +73,7 @@ number_detection_labels = {
     290: "290", 291: "291", 292: "292", 293: "293", 294: "294", 295: "295", 296: "296", 297: "297", 298: "298", 299: "299",
     300: "300"
 }
+
+def log_time(label, start_time):
+    if DEBUG_TIMING:
+        print(f"{label} took: {time.time() - start_time:.4f}s")
