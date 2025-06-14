@@ -14,7 +14,7 @@ import ffmpeg
 from datetime import datetime
 from ..config.firebase import initialize_firebase
 from ..utils.delivery import process_video, number_detector_2
-from ..utils.utils import calc_sg_score
+from ..utils.utils import calc_sg_score, log_time
 
 initialize_firebase()
 
@@ -47,6 +47,7 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
         frame_count = 0
 
         while datetime.now() < end_time:
+            t_loop = time.time()
             ret, frame = read_frame(cap, process, width, height)
             if not ret or frame is None:
                 continue
@@ -92,6 +93,7 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
                     match_count_updated = 1
                     end_match_start_time = time.time()
                 flag = True
+            log_time("Full loop iteration", t_loop)
         cap.release()
     except Exception as e:
         logging.error(f"Error processing Twitch stream: {e}")
@@ -235,80 +237,37 @@ def update_match_count(event_id, user_id, match_count):
     except Exception as e:
         logging.error(f"Error updating match count for user {str(user_id)} in event {str(event_id)}: {e}")
 
-
-def update_firebase_match_ranking(user_id, event_id, match_count, ranking):
-    """
-    Update the ranking for a given match in Firebase without overwriting other fields.
-    """
-    # Define the Firebase path for match history, including match count and ranking
-    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}/ranking'
-    db_ref = db.reference(path)
-
-    for attempt in range(3):  # Handling retries internally
-        try:
-            # Prepare match data to update ranking
-            if ranking is not None:
-                db_ref.set(float(ranking))  # Set the ranking at the specific path
-
-            break  # Exit the loop if the operation is successful
-
-        except Exception as e:
-            logging.error(f"Error updating Firebase match ranking: {e}. Attempt {attempt + 1}.")
-            time.sleep(2)  # Wait before retrying
-            
-def update_firebase_match_kill_count(user_id, event_id, match_count, kill_count):
-    """
-    Update the kill count for a given match in Firebase without overwriting other fields.
-    """
-    # Define the Firebase path for match history, including match count and kill count
-    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}/killCount'
-    db_ref = db.reference(path)
-
-    for attempt in range(3):  # Handling retries internally
-        try:
-            # Prepare match data to update kill count
-            if kill_count is not None:
-                db_ref.set(float(kill_count))  # Set the kill count at the specific path
-
-            break  # Exit the loop if the operation is successful
-
-        except Exception as e:
-            logging.error(f"Error updating Firebase match kill count: {e}. Attempt {attempt + 1}.")
-            time.sleep(2)  # Wait before retrying
-
 def update_firebase_match_ranking_and_score(user_id, event_id, match_count, ranking, kill_count):
     """
-    Calculate the SG score and update Firebase with the ranking, kill count, and SG score for a given match.
-    Calls separate functions to update ranking and kill count individually.
+    Calculate the SG score and update Firebase with the ranking, kill count, and SG score in a single update.
     """
-    # Calculate SG score based on ranking and kill count, if both are available
+    # Calculate SG score
     sg_score = calc_sg_score(kill_count, ranking) if ranking is not None and kill_count is not None else None
 
-    # Update ranking if available
-    if ranking is not None:
-        update_firebase_match_ranking(user_id, event_id, match_count, ranking)
-
-    # Update kill count if available
-    if kill_count is not None:
-        update_firebase_match_kill_count(user_id, event_id, match_count, kill_count)
-
-    # Define the Firebase path for match history, including match count and sgScore
-    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}/sgScore'
+    # Define the Firebase path to the match data
+    path = f'event-{event_id}/{user_id}/matchHistory/match_{match_count}'
     db_ref = db.reference(path)
 
-    for attempt in range(3):  # Handling retries internally
+    update_data = {}
+
+    if ranking is not None:
+        update_data["ranking"] = float(ranking)
+
+    if kill_count is not None:
+        update_data["killCount"] = float(kill_count)
+
+    if sg_score is not None:
+        update_data["sgScore"] = float(sg_score)
+
+    for attempt in range(3):
         try:
-            # Prepare match data to update sgScore
-            if sg_score is not None:
-                db_ref.set(float(sg_score))  # Set the sgScore at the specific path
-
-            break  # Exit the loop if the operation is successful
-
+            if update_data:
+                db_ref.update(update_data)
+            break
         except Exception as e:
-            logging.error(f"Error updating Firebase match sgScore: {e}. Attempt {attempt + 1}.")
-            time.sleep(2)  # Wait before retrying
-                
- 
+            logging.error(f"Error updating Firebase match data: {e}. Attempt {attempt + 1}.")
+            time.sleep(2)
+            
 def init_data(event_id, user_id, team_id=None, max_retries=3):
     """
     Initialize match_0 data in Firebase for a given event and user with default values.

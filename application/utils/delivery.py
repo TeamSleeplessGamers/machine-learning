@@ -1,27 +1,24 @@
 import cv2
-from ultralytics import YOLO
 import torch
 import os
-from ..utils.utils import number_detection_labels, cod_detection_labels
-# Load YOLO model
+import time
+from ultralytics import YOLO
+from ..utils.utils import number_detection_labels, cod_detection_labels, log_time
+
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
-if torch.cuda.is_available():
-    device = 'cuda'
-else:
-    device = 'cpu'
-   
-# Model path for score-detector.pt, used for primary score detection
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 model_path = os.path.join(base_dir, '..', '..', 'model', 'warzone.pt')
 model_path_2 = os.path.join(base_dir, '..', '..', 'model', 'ocr-detector.pt')
+
 model = YOLO(model_path).to(device)
 model_2 = YOLO(model_path_2).to(device)
 
-
 def process_video(frame):
     results = model(frame, verbose=False)
-    class_detections = {}
 
+    class_detections = {}
     detected_regions = {}
 
     for result in results:
@@ -44,15 +41,14 @@ def process_video(frame):
         resized_image = cv2.resize(bottom_half, None, fx=5, fy=5, interpolation=cv2.INTER_LINEAR)
 
         label = cod_detection_labels.get(cls, 'unknown')
-
         detected_regions[label] = resized_image
 
     return detected_regions
 
 def number_detector_2(frame):
     results = model_2(frame, verbose=False)
-    class_detections = {}
 
+    class_detections = {}
     for result in results:
         boxes = result.boxes
         for box in boxes:
@@ -70,7 +66,6 @@ def number_detector_2(frame):
     label_str = number_detection_labels.get(most_confident_cls, 'unknown')
 
     try:
-        # Right now looks like model value is one digit off the actual value
         return int(label_str) + 1
     except ValueError:
         return None
