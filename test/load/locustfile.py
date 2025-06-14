@@ -11,8 +11,8 @@ class WebsiteUser(HttpUser):
     wait_time = between(2, 10)  # seconds between tasks
     
     twitch_users = [
-        "nadeshot", "nadeshot", "nadeshot", "nadeshot", "nadeshot",
-        "nadeshot", "nadeshot", "nadeshot", "nadeshot", "nadeshot"
+        "vidgunn", "vidgunn", "vidgunn", "vidgunn", "vidgunn",
+        "vidgunn", "vidgunn", "vidgunn", "vidgunn", "vidgunn"
     ]
 
     @task

@@ -1,9 +1,8 @@
 import cv2
 import torch
 import os
-import time
 from ultralytics import YOLO
-from ..utils.utils import number_detection_labels, cod_detection_labels, log_time
+from ..utils.utils import number_detection_labels, cod_detection_labels
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 

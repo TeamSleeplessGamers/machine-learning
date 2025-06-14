@@ -14,7 +14,7 @@ import ffmpeg
 from datetime import datetime
 from ..config.firebase import initialize_firebase
 from ..utils.delivery import process_video, number_detector_2
-from ..utils.utils import calc_sg_score, log_time
+from ..utils.utils import calc_sg_score
 
 initialize_firebase()
 
@@ -35,6 +35,10 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
         streams = streamlink.streams(f"https://www.twitch.tv/{username}")
         stream_url = streams["best"].url
 
+        if not stream_url:
+            print(f"No 'best' stream quality found for {username}")
+            return
+        
         cap, process = get_stream_capture(stream_url)
 
         # If using ffmpeg, get resolution
@@ -47,7 +51,6 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
         frame_count = 0
 
         while datetime.now() < end_time:
-            t_loop = time.time()
             ret, frame = read_frame(cap, process, width, height)
             if not ret or frame is None:
                 continue
@@ -93,7 +96,6 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
                     match_count_updated = 1
                     end_match_start_time = time.time()
                 flag = True
-            log_time("Full loop iteration", t_loop)
         cap.release()
     except Exception as e:
         logging.error(f"Error processing Twitch stream: {e}")
