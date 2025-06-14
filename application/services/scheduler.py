@@ -149,7 +149,6 @@ def create_gpu_task_for_event(event_id):
          "dockerEntrypoint": ["bash", "run_gpu_setup.sh"],
         "imageName": "mjubil1/sleepless-gpu-worker:latest",
         "env": env,
-        "dockerEntrypoint": [],
         "dockerStartCmd": [],
         "name": f"event-pod-{event_id}",
         "supportPublicIp": True,

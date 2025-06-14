@@ -4,10 +4,6 @@ FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
 # Set working directory
 WORKDIR /workspace
 
-COPY  .env .env
-
-COPY firebase-dev.json firebase-dev.json
-
 # Install OS-level dependencies
 RUN apt-get update && apt-get install -y \
     git \
@@ -19,9 +15,7 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean
 
 # Copy your setup script into the container
-COPY scripts/gpu_startup.sh ./run_gpu_setup.sh
-RUN chmod +x run_gpu_setup.sh
+COPY scripts/gpu_startup.sh /opt/init/run_gpu_setup.sh
+RUN chmod +x /opt/init/run_gpu_setup.sh
 
-# Set the entrypoint
-ENTRYPOINT ["/bin/bash"]
-CMD ["-c", "./run_gpu_setup.sh"]
+CMD ["/bin/bash", "-c", "/opt/init/run_gpu_setup.sh || tail -f /dev/null"]

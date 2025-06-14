@@ -8,6 +8,8 @@ import os
 from firebase_admin import db
 import cv2
 import hashlib
+from dotenv import dotenv_values
+import base64
 import pytz
 import hmac
 import yaml
@@ -345,6 +347,70 @@ def match_template_spectating_route(event_id):
             'details': status
         })
     
+@routes_bp.route('/create-gpu-task', methods=['POST'])
+def create_gpu_task():
+    data = request.json
+    event_id = data.get('event_id')
+
+    if not event_id:
+        return jsonify({'error': 'Missing event_id'}), 400
+
+    url = "https://rest.runpod.io/v1/pods"
+      
+    env = {
+        "TWITCH_WEBHOOK_URL": "{{ RUNPOD_SECRET_TWITCH_WEBHOOK_URL }}",
+        "TWITCH_OAUTH_URL": "{{ RUNPOD_SECRET_TWITCH_OAUTH_URL }}",
+        "CLIENT_SECRET": "{{ RUNPOD_SECRET_CLIENT_SECRET }}",
+        "CLIENT_ID": "{{ RUNPOD_SECRET_CLIENT_ID }}",
+        "FIREBASE_DEV_JSON": "{{ RUNPOD_SECRET_FIREBASE_DEV_JSON }}",
+        "PROJECT_NAME": "{{ RUNPOD_SECRET_PROJECT_NAME }}",
+        "GPU_QUEUE_NAME": "{{ RUNPOD_SECRET_GPU_QUEUE_NAME }}",
+        "PYTHON_VERSION": "{{ RUNPOD_SECRET_PYTHON_VERSION }}",
+        "REDIS_PORT": "{{ RUNPOD_SECRET_REDIS_PORT }}",
+        "REDIS_HOST": "{{ RUNPOD_SECRET_REDIS_HOST }}",
+        "REDIS_URL": "{{ RUNPOD_SECRET_REDIS_URL }}",
+        "FIREBASE_CRED_PATH": "{{ RUNPOD_SECRET_FIREBASE_CRED_PATH }}",
+        "FIREBASE_DATABASE_URL": "{{ RUNPOD_SECRET_FIREBASE_DATABASE_URL }}",
+        "DATABASE_URL": "{{ RUNPOD_SECRET_DATABASE_URL }}"
+    }
+     
+    payload = {
+        "computeType": "GPU",
+        "gpuCount": 1,
+        "gpuTypePriority": "availability",
+        "cloudType": "SECURE",
+        "cpuFlavorPriority": "availability",
+        "dataCenterPriority": "availability",
+        "countryCodes": ["US"],
+        "vcpuCount": 6,
+        "supportPublicIp": True,
+        "minRAMPerGPU": 24,
+        "containerDiskInGb": 40,
+        "volumeInGb": 20,
+        "volumeMountPath": "/workspace",
+        "dockerEntrypoint": ["bash", "/opt/init/run_gpu_setup.sh"],
+        "imageName": "mjubil1/sleepless-gpu-worker:v1.0.1",
+        "env": env,
+        "name": f"event-pod-{event_id}",
+        "supportPublicIp": True,
+        "interruptible": False,
+        "globalNetworking": True,
+        "locked": False,
+        "ports": ["8888/http", "22/tcp"]
+    }
+
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('RUNPOD_API_KEY')}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+
+    if response.status_code in [200, 201]:
+        return jsonify({'status': 'success', 'pod_id': response.json().get('id')})
+    else:
+        return jsonify({'status': 'error', 'details': response.text}), response.status_code
+
 @routes_bp.route('/heatmap', methods=['GET'])
 def generate_and_serve_heatmap():
     base_path = os.path.dirname(__file__)  

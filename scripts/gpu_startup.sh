@@ -26,6 +26,8 @@ source .env
 set +a
 
 echo "=== Copying firebase json file into project directory ==="
+echo "$FIREBASE_KEY_BASE64" | base64 -d > /workspace/firebase-dev.json
+
 cp ../firebase-dev.json firebase-dev.json
 
 echo "=== Waiting for Redis to be reachable at $REDIS_HOST:$REDIS_PORT ==="
