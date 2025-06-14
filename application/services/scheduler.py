@@ -173,7 +173,6 @@ def create_gpu_task_for_event(event_id):
     else:
         return None
 
-
 def schedule_shutdown_for_event(event_id, pod_id, time_limit_minutes):
     time_limit = timedelta(minutes=time_limit_minutes)
     start_time = datetime.now()
@@ -206,7 +205,6 @@ def shutdown_gpu_task(event_id, pod_id):
     except Exception as e:
         print(f"⚠️ Error shutting down pod {pod_id}: {e}")
 
-    # Step 3: Update database
     try:
         database.update_gpu_task_for_event_start_soon(
             "event", event_id, pod_id, "stopped", stopped_at=datetime.utcnow()
