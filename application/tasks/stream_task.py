@@ -26,7 +26,7 @@ from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score
 
 # Celery task to process the Twitch stream
-@celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10, queue="gpu_tasks")
+@celery_config.celery.task(bind=True, max_retries=5, default_retry_delay=10)
 def process_twitch_stream(self, username, user_id, event_id, match_duration):
     # heavy GPU processing here
     try:

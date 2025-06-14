@@ -372,7 +372,8 @@ def create_gpu_task():
         "FIREBASE_CRED_PATH": "{{ RUNPOD_SECRET_FIREBASE_CRED_PATH }}",
         "FIREBASE_KEY_BASE64": "{{ RUNPOD_SECRET_FIREBASE_KEY_BASE64 }}",
         "FIREBASE_DATABASE_URL": "{{ RUNPOD_SECRET_FIREBASE_DATABASE_URL }}",
-        "DATABASE_URL": "{{ RUNPOD_SECRET_DATABASE_URL }}"
+        "DATABASE_URL": "{{ RUNPOD_SECRET_DATABASE_URL }}",
+        "EVENT_ID": str(event_id)
     }
      
     payload = {
@@ -390,7 +391,7 @@ def create_gpu_task():
         "volumeInGb": 20,
         "volumeMountPath": "/workspace",
         "dockerEntrypoint": ["bash", "/opt/init/run_gpu_setup.sh"],
-        "imageName": "mjubil1/sleepless-gpu-worker:v1.0.3",
+        "imageName": "mjubil1/sleepless-gpu-worker:v1.0.4",
         "env": env,
         "name": f"event-pod-{event_id}",
         "supportPublicIp": True,
@@ -469,8 +470,11 @@ def process_stream():
         return jsonify({'error': f'{username} is not live on Twitch'}), 409
 
     try:
-        # Enqueue the task to Celery
-        task = process_twitch_stream.delay(username, user_Id, event_Id, match_duration)
+        queue_name = f"gpu_tasks_event_{event_Id}"        
+        task = process_twitch_stream.apply_async(
+            args=[username, user_Id, event_Id, match_duration],
+            queue=queue_name
+        )
         return jsonify({'task_id': str(task.id), 'status': 'Processing started'}), 202
     except Exception as e:
         return jsonify({'error': str(e)}), 500
