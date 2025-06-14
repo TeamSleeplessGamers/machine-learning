@@ -56,7 +56,6 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
                 continue
 
             filename = f"frames_processed/frame_{frame_count}.jpg"
-            print(f"Why im not here {filename}")
             cv2.imwrite(filename, frame)
     
             match_state = handle_match_state(frame)
@@ -104,6 +103,7 @@ def get_stream_capture(stream_url):
             ffmpeg
             .input(stream_url, hwaccel='cuda')  # use 'videotoolbox' on macOS, 'cuda' on Linux
             .output('pipe:', format='rawvideo', pix_fmt='bgr24')
+            .global_args('-loglevel', 'error')
             .run_async(pipe_stdout=True)
         )
         return None, process
@@ -114,6 +114,7 @@ def get_stream_capture(stream_url):
             ffmpeg
             .input(stream_url, hwaccel='videotoolbox')  # change as needed
             .output('pipe:', format='rawvideo', pix_fmt='bgr24')
+            .global_args('-loglevel', 'error')
             .run_async(pipe_stdout=True)
         )
         return None, process
