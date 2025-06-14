@@ -421,5 +421,6 @@ def start_fifteen_minute_thread():
     fifteen_minute_thread.daemon = True
     fifteen_minute_thread.start()
 
-start_scheduler_thread()
-start_fifteen_minute_thread()
+if os.environ["ENV"] == "production":
+    start_scheduler_thread()
+    start_fifteen_minute_thread()
