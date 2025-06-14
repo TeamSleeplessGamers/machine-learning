@@ -147,7 +147,7 @@ def create_gpu_task_for_event(event_id):
         "volumeInGb": 20,
         "volumeMountPath": "/workspace",
          "dockerEntrypoint": ["bash", "run_gpu_setup.sh"],
-        "imageName": "mjubil1/sleepless-gpu-worker",
+        "imageName": "mjubil1/sleepless-gpu-worker:latest",
         "env": env,
         "dockerEntrypoint": [],
         "dockerStartCmd": [],
