@@ -5,7 +5,6 @@ import os
 import requests
 from .twitch_oauth import get_twitch_oauth_token
 from ..config.database import Database
-from dotenv import dotenv_values
 import redis
 
 database = Database()
@@ -131,7 +130,24 @@ def start_scheduler():
 
 def create_gpu_task_for_event(event_id): 
     url = "https://rest.runpod.io/v1/pods"
-    env = dotenv_values(".env")
+    env = {
+        "TWITCH_WEBHOOK_URL": "{{ RUNPOD_SECRET_TWITCH_WEBHOOK_URL }}",
+        "TWITCH_OAUTH_URL": "{{ RUNPOD_SECRET_TWITCH_OAUTH_URL }}",
+        "CLIENT_SECRET": "{{ RUNPOD_SECRET_CLIENT_SECRET }}",
+        "CLIENT_ID": "{{ RUNPOD_SECRET_CLIENT_ID }}",
+        "FIREBASE_DEV_JSON": "{{ RUNPOD_SECRET_FIREBASE_DEV_JSON }}",
+        "PROJECT_NAME": "{{ RUNPOD_SECRET_PROJECT_NAME }}",
+        "GPU_QUEUE_NAME": "{{ RUNPOD_SECRET_GPU_QUEUE_NAME }}",
+        "PYTHON_VERSION": "{{ RUNPOD_SECRET_PYTHON_VERSION }}",
+        "REDIS_PORT": "{{ RUNPOD_SECRET_REDIS_PORT }}",
+        "REDIS_HOST": "{{ RUNPOD_SECRET_REDIS_HOST }}",
+        "REDIS_URL": "{{ RUNPOD_SECRET_REDIS_URL }}",
+        "FIREBASE_CRED_PATH": "{{ RUNPOD_SECRET_FIREBASE_CRED_PATH }}",
+        "FIREBASE_KEY_BASE64": "{{ RUNPOD_SECRET_FIREBASE_KEY_BASE64 }}",
+        "FIREBASE_DATABASE_URL": "{{ RUNPOD_SECRET_FIREBASE_DATABASE_URL }}",
+        "DATABASE_URL": "{{ RUNPOD_SECRET_DATABASE_URL }}",
+        "EVENT_ID": str(event_id)
+    }
     
     payload = {
         "computeType": "GPU",
@@ -142,18 +158,17 @@ def create_gpu_task_for_event(event_id):
         "dataCenterPriority": "availability",
         "countryCodes": ["US"],
         "vcpuCount": 6,
+        "supportPublicIp": True,
         "minRAMPerGPU": 24,
         "containerDiskInGb": 40,
         "volumeInGb": 20,
         "volumeMountPath": "/workspace",
-         "dockerEntrypoint": ["bash", "run_gpu_setup.sh"],
-        "imageName": "mjubil1/sleepless-gpu-worker:latest",
+        "dockerEntrypoint": ["bash", "/opt/init/run_gpu_setup.sh"],
+        "imageName": "mjubil1/sleepless-gpu-worker:v1.0.5",
         "env": env,
-        "dockerStartCmd": [],
         "name": f"event-pod-{event_id}",
         "supportPublicIp": True,
         "interruptible": False,
-        "globalNetworking": True,
         "locked": False,
         "ports": ["8888/http", "22/tcp"]
     }
