@@ -1,33 +1,42 @@
 #!/bin/bash
 
-echo "=== Installing system dependencies ==="
-sudo apt update && sudo apt install -y git python3.13 python3-pip python3-venv netcat
+set -e  # Exit on any error
 
-echo "=== Cloning repository ==="
-git clone https://github.com/TeamSleeplessGamers/machine-learning
-cd machine-learning
+
+REPO_URL="https://github.com/TeamSleeplessGamers/machine-learning"
+REPO_DIR="machine-learning"
+
+echo "=== Checking if repository is already cloned ==="
+if [ -d "$REPO_DIR/.git" ]; then
+  echo "Repository already cloned. Skipping clone."
+else
+  echo "Cloning repository..."
+  git clone "$REPO_URL"
+fi
+
+cd "$REPO_DIR"
 
 echo "=== Setting up virtual environment ==="
 python3 -m venv venv
-
-# Activate the venv for the current script execution only
 source venv/bin/activate
 
-echo "=== Installing Python dependencies ==="
-pip install --upgrade pip
+echo "=== Installing remaining Python dependencies ==="
 pip install -r requirements.txt
 
-echo "=== Copying firebase json file into project directory ==="
+echo "=== Copying Firebase key file ==="
+mkdir -p /workspace
 echo "$FIREBASE_KEY_BASE64" | base64 -d > /workspace/firebase-dev.json
-
-cp ../firebase-dev.json firebase-dev.json
+cp /workspace/firebase-dev.json firebase-dev.json
 
 echo "=== Waiting for Redis to be reachable at $REDIS_HOST:$REDIS_PORT ==="
 until nc -z $REDIS_HOST $REDIS_PORT; do
-  echo "Waiting for Redis..."
+  echo "Waiting for Redis at $REDIS_HOST:$REDIS_PORT..."
   sleep 2
 done
 
-echo "=== Starting Celery GPU worker ==="
-# Use celery from the virtualenv explicitly
-venv/bin/celery -A application.celery_config.celery worker -Q gpu_tasks_event_${EVENT_ID} --loglevel=info --pool=threads --concurrency=8
+echo "=== Starting Celery GPU worker for event ID: $EVENT_ID ==="
+exec venv/bin/celery -A application.celery_config.celery worker \
+  -Q gpu_tasks_event_"${EVENT_ID}" \
+  --loglevel=info \
+  --pool=threads \
+  --concurrency=8
