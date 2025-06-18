@@ -259,3 +259,25 @@ def handle_blocking_chat_request():
     }
     response_data, status_code = process_chat_request_blocking(**args)
     return jsonify(response_data), status_code
+
+def test_endpoint_handle_blocking_chat_request(frame):
+    def get_form_val(key, default, converter):
+            val = request.form.get(key)
+            return converter(val) if val is not None else default
+
+    load_params = {
+        "load_in_4bit": get_form_val("load_in_4bit", DEFAULT_LOAD_PARAMS["load_in_4bit"], lambda v: v.lower() == 'true'),
+        "bnb_4bit_quant_type": request.form.get("bnb_4bit_quant_type", DEFAULT_LOAD_PARAMS["bnb_4bit_quant_type"]),
+        "bnb_4bit_use_double_quant": get_form_val("bnb_4bit_use_double_quant", DEFAULT_LOAD_PARAMS["bnb_4bit_use_double_quant"], lambda v: v.lower() == 'true'),
+        "bnb_4bit_compute_dtype_str": request.form.get("bnb_4bit_compute_dtype_str", DEFAULT_LOAD_PARAMS["bnb_4bit_compute_dtype_str"]),
+        "llm_int8_enable_fp32_cpu_offload": get_form_val("llm_int8_enable_fp32_cpu_offload", DEFAULT_LOAD_PARAMS["llm_int8_enable_fp32_cpu_offload"], lambda v: v.lower() == 'true')
+    }
+    args = {
+        "current_message": {"text": request.form.get("message", ""), "files": frame},
+        "model_display_name": request.form.get("model_display_name", DEFAULT_MODEL_DISPLAY_NAME),
+        "system_prompt_key": request.form.get("system_prompt_key", PRIMARY_DEFAULT_SYSTEM_PROMPT_KEY),
+        "temperature": get_form_val("temperature", DEFAULT_TEMPERATURE, float),
+        **load_params
+    }
+    response_data, status_code = process_chat_request_blocking(**args)
+    return jsonify(response_data), status_code
