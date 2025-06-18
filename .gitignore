@@ -17,5 +17,6 @@ frame_test/
 cod-data
 **/__pycache__/
 venv/
+local-dev/
 scripts/machine-learning
 development/
