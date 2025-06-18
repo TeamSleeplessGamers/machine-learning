@@ -60,6 +60,11 @@ USAGE_LOG_HEADERS = ["timestamp", "user_identifier", "request_uuid", "model_id",
 usage_log_lock = Lock()
 loaded_models_cache = {}
 
+def safe_log(log_payload):
+    timestamp = log_payload.get('timestamp', 'No timestamp')
+    message = log_payload.get('message', 'No message')
+    print(f"{timestamp}: {message}")
+
 def _load_image_from_url(url):
     try:
         if url.startswith('http'):
@@ -133,7 +138,7 @@ def get_model_and_processor(model_id: str, load_in_4bit: bool, bnb_4bit_quant_ty
         print(f"Successfully loaded model and processor for: {model_id}")
         return model, processor
     except Exception as e:
-        print(f"Error loading model '{model_id}': {e}", exc_info=True)
+        print(f"Error loading model '{model_id}': {e}")
         if cache_key in loaded_models_cache: del loaded_models_cache[cache_key]
         raise e
 
@@ -216,6 +221,7 @@ def process_chat_request_blocking(**args):
     
     full_ai_response = ""
     start_time = time.monotonic()
+    print("I shouldn't get here")
     try:
         full_ai_response = generate_chat_response_blocking(
             model_id_param=actual_model_id,
@@ -232,13 +238,12 @@ def process_chat_request_blocking(**args):
         return response_data, 200
 
     except Exception as e:
-        logger.error(f"Error during blocking model generation for {request_uuid}: {e}", exc_info=True)
+        logger.error(f"Error during blocking model generation for {request_uuid}: {e}")
         total_time_ms = round((time.monotonic() - start_time) * 1000)
         log_payload.update({"error_message": str(e)[:200], "total_stream_handler_time_ms": total_time_ms})
         return {"error": f"Error during model generation: {str(e)[:200]}", "request_uuid": request_uuid}, 500
     finally:
-        print(**log_payload)
-
+        safe_log(log_payload)
 def handle_blocking_chat_request():
     def get_form_val(key, default, converter):
             val = request.form.get(key)

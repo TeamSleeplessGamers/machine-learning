@@ -13,6 +13,7 @@ main.py
 heatmap.png
 frames/
 frames_processed/
+frame_test/
 cod-data
 **/__pycache__/
 venv/

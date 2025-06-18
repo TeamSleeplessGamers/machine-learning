@@ -370,7 +370,7 @@ def generate_and_serve_heatmap():
 @routes_bp.route('/api/process-image', methods=['POST'])
 def process_image():
     base_path = os.path.dirname(__file__)  
-    frames_dir = os.path.join(base_path, '..', '..', 'frames')
+    frames_dir = os.path.join(base_path, '..', '..', 'frames_test')
 
     # Construct full path to the image
     image_path = os.path.join(frames_dir, 'test_1.jpg')
