@@ -26,6 +26,7 @@ from ..config.database import Database
 from ..config.firebase import initialize_firebase
 from ..utils.delivery import process_video, number_detector_2
 from ..utils.utils import calc_sg_score
+from ..utils.qwen_ocr import test_endpoint_handle_blocking_chat_request
 
 database = Database()
 conn = database.get_connection()
@@ -366,6 +367,18 @@ def generate_and_serve_heatmap():
         return jsonify({'message': 'Failed to generate heatmap'}), 500
 
 # Route to trigger stream processing
+@routes_bp.route('/api/process-image', methods=['POST'])
+def process_image():
+    base_path = os.path.dirname(__file__)  
+    frames_dir = os.path.join(base_path, '..', '..', 'frames_test')
+
+    # Construct full path to the image
+    image_path = os.path.join(frames_dir, 'test_1.jpg')
+
+    print("Image path:", image_path)
+    test_endpoint_handle_blocking_chat_request(image_path)
+    
+# Route to trigger stream processing
 @routes_bp.route('/api/process-stream', methods=['POST'])
 def process_stream():
     data = request.get_json()
@@ -402,7 +415,7 @@ def process_stream():
         return jsonify({'error': f'{username} is not live on Twitch'}), 409
 
     try:
-        queue_name = f"gpu_tasks_event_{event_Id}"        
+        queue_name = f"gpu_tasks_event_{event_Id}" 
         task = process_twitch_stream.apply_async(
             args=[username, user_Id, event_Id, match_duration],
             queue=queue_name

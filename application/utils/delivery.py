@@ -1,6 +1,8 @@
 import cv2
 import torch
 import os
+import requests
+import tempfile
 from ultralytics import YOLO
 from ..utils.utils import number_detection_labels, cod_detection_labels
 
@@ -45,26 +47,49 @@ def process_video(frame):
     return detected_regions
 
 def number_detector_2(frame):
-    results = model_2(frame, verbose=False)
+    if os.getenv("ENV") == "development":
+        hugging_face_token = os.getenv("HUGGING_FACE_TOKEN")
+        if not hugging_face_token:
+            print("Missing HUGGING_FACE_TOKEN environment variable")
+            return None
 
-    class_detections = {}
-    for result in results:
-        boxes = result.boxes
-        for box in boxes:
-            cls = int(box.cls)
-            conf = float(box.conf)
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
+        _, buffer = cv2.imencode('.jpg', frame)
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as tmp:
+            tmp.write(buffer.tobytes())
+            tmp.seek(0)
 
-            if cls not in class_detections or conf > class_detections[cls]['conf']:
-                class_detections[cls] = {'conf': conf, 'box': (x1, y1, x2, y2)}
+            headers = {
+                "Authorization": f"Bearer {hugging_face_token}"
+            }
 
-    if not class_detections:
-        return None
+            response = requests.post(
+                "https://sleeplessgamers-llm-ocr.hf.space/api/chat",
+                files={"image_file": tmp},
+                data={
+                    "system_prompt_key": "ocr_digit_only",
+                    "stream": "false"
+                },
+                headers=headers
+            )
 
-    most_confident_cls = max(class_detections.items(), key=lambda item: item[1]['conf'])[0]
-    label_str = number_detection_labels.get(most_confident_cls, 'unknown')
+            if response.ok:
+                try:
+                    data = response.json()
+                    try:
+                        predicted_number = int(data["content"])
+                    except ValueError as e:
+                        if "invalid literal for int()" in str(e):
+                            import re
+                            digits = re.sub(r"\D", "", data["content"])
+                            predicted_number = int(digits) if digits else None
+                        else:
+                            raise
+                    return predicted_number
+                except Exception as e:
+                    print(f"API parsing error: {e}")
+                    return None
 
-    try:
-        return int(label_str) + 1
-    except ValueError:
-        return None
+            else:
+                print(f"OCR API error: {response.status_code}, {response.text}")
+                return None
+
