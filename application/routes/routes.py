@@ -415,7 +415,7 @@ def process_stream():
         return jsonify({'error': f'{username} is not live on Twitch'}), 409
 
     try:
-        queue_name = f"gpu_tasks_event_{event_Id}"        
+        queue_name = f"gpu_tasks_event_{event_Id}" 
         task = process_twitch_stream.apply_async(
             args=[username, user_Id, event_Id, match_duration],
             queue=queue_name
