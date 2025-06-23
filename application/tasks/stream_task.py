@@ -31,7 +31,7 @@ def process_twitch_stream(self, username, user_id, event_id, match_duration):
         end_match_start_time = 0.0
         flag = False
 
-        end_time = datetime.now() + timedelta(minutes=match_duration if match_duration else 60)
+        end_time = datetime.now() + timedelta(minutes=int(match_duration) if match_duration else 60)
         streams = streamlink.streams(f"https://www.twitch.tv/{username}")
         stream_url = streams["best"].url
 
