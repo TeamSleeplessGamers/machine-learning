@@ -5,6 +5,7 @@ import requests
 import tempfile
 from ultralytics import YOLO
 from ..utils.utils import number_detection_labels, cod_detection_labels
+from ..utils.qwen_ocr import handle_blocking_chat_request
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -92,4 +93,8 @@ def number_detector_2(frame):
             else:
                 print(f"OCR API error: {response.status_code}, {response.text}")
                 return None
+    else:
+        request_value = handle_blocking_chat_request(frame)
+        predicted_number = int(request_value["content"])
+
 
