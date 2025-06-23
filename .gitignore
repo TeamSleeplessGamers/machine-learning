@@ -1,8 +1,6 @@
 # created by virtualenv automatically
 /lib
 /bin
-.env
-.env.production
 /recorded
 /processed
 /output-frames
@@ -18,3 +16,5 @@ venv/
 local-dev/
 scripts/machine-learning
 development/
+config.bat
+node_modules

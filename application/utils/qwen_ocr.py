@@ -265,7 +265,7 @@ def handle_blocking_chat_request():
     response_data, status_code = process_chat_request_blocking(**args)
     return jsonify(response_data), status_code
 
-def test_endpoint_handle_blocking_chat_request(frame):
+def handle_blocking_chat_request(frame):
     def get_form_val(key, default, converter):
             val = request.form.get(key)
             return converter(val) if val is not None else default
